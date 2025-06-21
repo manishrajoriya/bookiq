@@ -3,26 +3,26 @@ import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useCallback, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Animated,
-    Dimensions,
-    Image,
-    Modal,
-    Platform,
-    SafeAreaView,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    Vibration,
-    View
+  ActivityIndicator,
+  Alert,
+  Animated,
+  Dimensions,
+  Image,
+  Modal,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  Vibration,
+  View
 } from 'react-native';
 import NoteReaderModal from '../components/NoteReaderModal';
 import { generateQuizFromNotes, processImage } from '../services/geminiServices';
-import { addHistory, addQuiz, getAllQuizzes, resetQuizTable, spendCredits } from '../services/historyStorage';
+import { addHistory, addQuiz, getAllQuizzes, spendCredits } from '../services/historyStorage';
 
 const { width, height } = Dimensions.get('window');
 
@@ -431,29 +431,7 @@ const QuizMaker = () => {
     }
   };
 
-  const handleResetQuizTable = async () => {
-    Alert.alert(
-      'Reset Quiz Table',
-      'This will delete all quizzes and recreate the table with the correct schema. This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reset',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await resetQuizTable();
-              await loadQuizzes();
-              Alert.alert('Success', 'Quiz table has been reset successfully.');
-            } catch (error) {
-              console.error('Failed to reset quiz table:', error);
-              Alert.alert('Error', 'Failed to reset quiz table. Please try again.');
-            }
-          }
-        }
-      ]
-    );
-  };
+ 
 
   const openNotePreview = (quiz: Quiz) => {
     setSelectedQuiz(quiz);
@@ -678,12 +656,7 @@ const QuizMaker = () => {
             >
               <Ionicons name="scan-outline" size={24} color="#f093fb" />
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.resetButton}
-              onPress={handleResetQuizTable}
-            >
-              <Ionicons name="refresh-outline" size={24} color="#ef4444" />
-            </TouchableOpacity>
+           
           </View>
         </View>
       </Animated.View>
@@ -750,6 +723,7 @@ const QuizMaker = () => {
         onClose={() => setPreviewModalVisible(false)}
         note={selectedQuiz}
         isScanNote={false}
+        isQuiz={true}
       />
 
       {/* Quiz Generation Modal */}

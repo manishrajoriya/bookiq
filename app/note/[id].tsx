@@ -2,66 +2,71 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { addHistory, addNote, getNoteById, getScanNoteById, updateHistoryNote, updateNote, updateScanNote } from '../../services/historyStorage';
+import { addHistory, addNote, getNoteById, getQuizById, getScanNoteById, updateHistoryNote, updateNote, updateQuiz, updateScanNote } from '../../services/historyStorage';
 
 export default function NoteDetailScreen() {
-    const { id } = useLocalSearchParams<{ id: string }>();
+    const { id, isQuiz: isQuizParam } = useLocalSearchParams<{ id: string, isQuiz?: string }>();
     const router = useRouter();
     const [title, setTitle] = useState('');
     const [content, setContent] = useState('');
     const [isScanNote, setIsScanNote] = useState(false);
     const isNew = id === 'new';
+    const isQuiz = isQuizParam === 'true';
 
     useEffect(() => {
         if (!isNew) {
             const loadNote = async () => {
-                // First try to load as a scan note
-                let note = await getScanNoteById(Number(id));
-                if (note) {
-                    setIsScanNote(true);
-                    setTitle(note.title);
-                    setContent(note.content);
+                if (isQuiz) {
+                    const quiz = await getQuizById(Number(id));
+                    if (quiz) {
+                        setTitle(quiz.title);
+                        setContent(quiz.content);
+                    }
                 } else {
-                    // If not found in scan notes, try regular notes
-                    note = await getNoteById(Number(id));
+                    let note = await getScanNoteById(Number(id));
                     if (note) {
-                        setIsScanNote(false);
+                        setIsScanNote(true);
                         setTitle(note.title);
                         setContent(note.content);
+                    } else {
+                        note = await getNoteById(Number(id));
+                        if (note) {
+                            setIsScanNote(false);
+                            setTitle(note.title);
+                            setContent(note.content);
+                        }
                     }
                 }
             };
             loadNote();
         }
-    }, [id, isNew]);
+    }, [id, isNew, isQuiz]);
 
     const handleSave = async () => {
         if (!title.trim()) {
             Alert.alert("Title Required", "Please enter a title for your note.");
             return;
         }
-        console.log("NOTE_DETAIL: handleSave called. isNew:", isNew, "isScanNote:", isScanNote);
         try {
             if (isNew) {
-                console.log("NOTE_DETAIL: Creating new note with title:", title);
                 const newNoteId = await addNote(title, content);
-                console.log("NOTE_DETAIL: Note added to 'notes' table. Now adding to 'history' table.");
                 await addHistory('', 'notes', title, content); 
-                console.log("NOTE_DETAIL: Note also added to history.");
             } else {
-                console.log("NOTE_DETAIL: Updating note with id:", id, "isScanNote:", isScanNote);
-                if (isScanNote) {
+                if (isQuiz) {
+                    await updateQuiz(Number(id), title, content);
+                    await addHistory('', 'quiz-updated', title, content);
+                } else if (isScanNote) {
                     await updateScanNote(Number(id), title, content);
                     await addHistory('', 'scan-notes-updated', title, content);
                 } else {
                     await updateNote(Number(id), title, content);
                     await updateHistoryNote(Number(id), title, content);
                 }
-                console.log("NOTE_DETAIL: Note updated and history log created.");
             }
             router.back();
         } catch (error) {
             console.error("NOTE_DETAIL: Error in handleSave:", error);
+            Alert.alert("Error", "There was an error saving your note. Please try again.");
         }
     };
 
@@ -76,7 +81,7 @@ export default function NoteDetailScreen() {
                 </TouchableOpacity>
                 <View style={styles.headerContent}>
                     <Text style={styles.headerTitle}>
-                        {isNew ? 'New Note' : isScanNote ? 'Edit Scan Note' : 'Edit Note'}
+                        {isNew ? 'New Note' : isQuiz ? 'Edit Quiz' : isScanNote ? 'Edit Scan Note' : 'Edit Note'}
                     </Text>
                     {!isNew && isScanNote && (
                         <View style={styles.scanNoteIndicator}>
@@ -98,7 +103,7 @@ export default function NoteDetailScreen() {
                 />
                 <TextInput
                     style={styles.contentInput}
-                    placeholder="Start writing your note here..."
+                    placeholder={isQuiz ? "Edit your quiz questions and answers here..." : "Start writing your note here..."}
                     value={content}
                     onChangeText={setContent}
                     multiline

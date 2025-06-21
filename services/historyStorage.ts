@@ -337,17 +337,14 @@ export const getAllQuizzes = async (): Promise<Quiz[]> => {
 };
 
 export const getQuizById = async (id: number): Promise<Quiz | null> => {
-    const localDb = await getDb();
-    const result = await localDb.getFirstAsync("SELECT * FROM quiz_maker WHERE id = ?;", [id]);
-    return result as Quiz | null;
+  const localDb = await getDb();
+  const result = await localDb.getFirstAsync("SELECT * FROM quiz_maker WHERE id = ?;", [id]);
+  return result as Quiz | null;
 };
 
-export const updateQuiz = async (id: number, title: string, questions: string) => {
+export const updateQuiz = async (id: number, title: string, content: string) => {
     const localDb = await getDb();
-    await localDb.runAsync(
-      "UPDATE quiz_maker SET title = ?, questions = ? WHERE id = ?;",
-      [title, questions, id]
-    );
+    await localDb.runAsync("UPDATE quiz_maker SET title = ?, content = ? WHERE id = ?;", [title, content, id]);
 };
 
 export const deleteQuiz = async (id: number) => {
@@ -376,7 +373,7 @@ export const resetDatabase = async () => {
 export const resetQuizTable = async () => {
   const localDb = await getDb();
   console.log("DATABASE: Resetting quiz table...");
-  await localDb.execAsync('DROP TABLE IF EXISTS quizzes;');
+  await localDb.execAsync('DROP TABLE IF EXISTS quiz_maker;');
   await initQuizTable();
   console.log("DATABASE: Quiz table reset.");
 };

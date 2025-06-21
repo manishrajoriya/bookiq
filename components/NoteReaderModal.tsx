@@ -14,13 +14,15 @@ interface NoteReaderModalProps {
     wordCount?: number;
   } | null;
   isScanNote?: boolean;
+  isQuiz?: boolean;
 }
 
 export default function NoteReaderModal({ 
   visible, 
   onClose, 
   note, 
-  isScanNote = false 
+  isScanNote = false,
+  isQuiz = false
 }: NoteReaderModalProps) {
   const router = useRouter();
 
@@ -80,7 +82,11 @@ export default function NoteReaderModal({
             style={styles.editButton}
             onPress={() => {
               onClose();
-              router.push(`/note/${note.id}` as any);
+              if (isQuiz) {
+                router.push({ pathname: `/note/${note.id}`, params: { isQuiz: true } } as any);
+              } else {
+                router.push(`/note/${note.id}` as any);
+              }
             }}
           >
             <Ionicons name="create-outline" size={20} color="#6366f1" />
