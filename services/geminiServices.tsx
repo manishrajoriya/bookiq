@@ -83,7 +83,7 @@ export const getAnswerFromGemini = async (
   // Send to Gemini
   try {
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${process.env.EXPO_PUBLIC_GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite-preview-02-05:generateContent?key=${process.env.EXPO_PUBLIC_GEMINI_API_KEY}`,
       {
         contents: [{ parts: [{ text: prompt }] }],
       },
@@ -98,6 +98,61 @@ export const getAnswerFromGemini = async (
   } catch (error) {
     console.error("Error getting Gemini response:", error);
     throw new Error("Failed to get AI response. Please try again later.");
+  }
+};
+
+export const generateQuizFromNotes = async (
+  notesContent: string,
+  quizType: 'multiple-choice' | 'true-false' | 'fill-blank' = 'multiple-choice',
+  numberOfQuestions: number = 5
+): Promise<string> => {
+  const prompt = `You are an expert quiz generator. Create a comprehensive quiz based on the following study notes content.
+
+Study Notes Content:
+"${notesContent}"
+
+Requirements:
+- Generate ${numberOfQuestions} ${quizType} questions
+- Make questions challenging but fair
+- Include a mix of difficulty levels
+- For multiple choice: provide 4 options (A, B, C, D) with only one correct answer
+- For true/false: provide clear statements that are definitely true or false
+- For fill in the blank: provide sentences with key terms missing
+- Format the output clearly with question numbers
+- Include the correct answers at the end
+
+Please format your response as follows:
+1. [Question 1]
+   A) [Option A]
+   B) [Option B]
+   C) [Option C]
+   D) [Option D]
+
+2. [Question 2]
+   ...
+
+ANSWERS:
+1. [Correct answer with explanation]
+2. [Correct answer with explanation]
+...`;
+
+  try {
+    const response = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite-preview-02-05:generateContent?key=${process.env.EXPO_PUBLIC_GEMINI_API_KEY}`,
+      {
+        contents: [{ parts: [{ text: prompt }] }],
+      },
+      { headers: { "Content-Type": "application/json" } }
+    );
+
+    if (!response.data.candidates?.[0]?.content?.parts?.[0]?.text) {
+      throw new Error("No response received from Gemini");
+    }
+
+    return response.data.candidates[0].content.parts[0].text;
+  } catch (error) {
+    console.error("Error generating quiz from notes:", error);
+    throw new Error("Failed to generate quiz. Please try again later.");
   }
 };
 

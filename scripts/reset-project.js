@@ -6,6 +6,7 @@
  * You can remove the `reset-project` script from package.json and safely delete this file after running it.
  */
 
+const { execSync } = require('child_process');
 const fs = require("fs");
 const path = require("path");
 const readline = require("readline");
@@ -110,3 +111,21 @@ rl.question(
     }
   }
 );
+
+console.log('🧹 Resetting project...');
+
+// Remove node_modules and reinstall
+console.log('📦 Removing node_modules...');
+if (fs.existsSync('node_modules')) {
+  execSync('rm -rf node_modules', { stdio: 'inherit' });
+}
+
+console.log('📦 Installing dependencies...');
+execSync('npm install', { stdio: 'inherit' });
+
+// Clear Expo cache
+console.log('🗑️ Clearing Expo cache...');
+execSync('npx expo start --clear', { stdio: 'inherit' });
+
+console.log('✅ Project reset complete!');
+console.log('💡 Note: You may need to manually reset the database in the app if you encounter schema issues.');

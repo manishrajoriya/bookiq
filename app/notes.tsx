@@ -3,19 +3,35 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
-    Alert, FlatList,
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    Modal,
     Platform,
-    StyleSheet, Text,
-    TextInput, TouchableOpacity, View
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import NoteReaderModal from '../components/NoteReaderModal';
-import { deleteNote, getAllNotes, Note } from '../services/historyStorage';
+import { generateQuizFromNotes } from '../services/geminiServices';
+import { addQuiz, deleteNote, getAllNotes, Note, spendCredits } from '../services/historyStorage';
+
+type QuizType = 'multiple-choice' | 'true-false' | 'fill-blank';
 
 export default function NotesScreen() {
     const [notes, setNotes] = useState<Note[]>([]);
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedNote, setSelectedNote] = useState<Note | null>(null);
     const [previewModalVisible, setPreviewModalVisible] = useState(false);
+    const [quizModalVisible, setQuizModalVisible] = useState(false);
+    const [generatedQuiz, setGeneratedQuiz] = useState<string>('');
+    const [selectedQuizType, setSelectedQuizType] = useState<QuizType>('multiple-choice');
+    const [numberOfQuestions, setNumberOfQuestions] = useState<number>(5);
+    const [isGenerating, setIsGenerating] = useState(false);
     const router = useRouter();
 
     const loadNotes = useCallback(async () => {
@@ -60,6 +76,82 @@ export default function NotesScreen() {
         setPreviewModalVisible(true);
     };
 
+    const openQuizModal = (note: Note) => {
+        setSelectedNote(note);
+        setQuizModalVisible(true);
+        setGeneratedQuiz('');
+    };
+
+    const closeQuizModal = () => {
+        if (isGenerating) {
+            Alert.alert(
+                'Generation in Progress',
+                'Please wait for the quiz generation to complete.',
+                [{ text: 'OK' }]
+            );
+            return;
+        }
+        setQuizModalVisible(false);
+        setSelectedNote(null);
+        setGeneratedQuiz('');
+    };
+
+    const generateQuiz = async () => {
+        if (!selectedNote) return;
+
+        try {
+            setIsGenerating(true);
+
+            const hasEnoughCredits = await spendCredits(2);
+            if (!hasEnoughCredits) {
+                Alert.alert('Insufficient Credits', 'You need 2 credits to generate a quiz.');
+                return;
+            }
+
+            const quiz = await generateQuizFromNotes(
+                selectedNote.content,
+                selectedQuizType,
+                numberOfQuestions
+            );
+
+            setGeneratedQuiz(quiz);
+
+        } catch (error) {
+            console.error('Quiz generation error:', error);
+            Alert.alert('Error', 'Failed to generate quiz. Please try again.');
+        } finally {
+            setIsGenerating(false);
+        }
+    };
+
+    const saveGeneratedQuiz = async () => {
+        if (!generatedQuiz || !selectedNote) return;
+
+        try {
+            const quizTitle = `${selectedNote.title} - ${selectedQuizType.replace('-', ' ')} Quiz`;
+            
+            await addQuiz(
+                quizTitle,
+                generatedQuiz,
+                selectedQuizType,
+                numberOfQuestions,
+                selectedNote.id,
+                'note'
+            );
+
+            Alert.alert(
+                'Success!', 
+                'Quiz has been saved successfully.',
+                [{ text: 'OK' }]
+            );
+            
+            closeQuizModal();
+        } catch (error) {
+            console.error('Failed to save quiz:', error);
+            Alert.alert('Error', 'Failed to save quiz. Please try again.');
+        }
+    };
+
     const renderNote = ({ item }: { item: Note }) => (
         <TouchableOpacity 
             style={styles.noteCard} 
@@ -71,9 +163,26 @@ export default function NotesScreen() {
                 <Text style={styles.noteExcerpt} numberOfLines={3}>{item.content}</Text>
                 <Text style={styles.noteDate}>{new Date(item.createdAt).toLocaleString()}</Text>
             </View>
-            <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.deleteButton}>
-                <Ionicons name="trash-outline" size={22} color="#ff6b6b" />
-            </TouchableOpacity>
+            <View style={styles.noteActions}>
+                <TouchableOpacity 
+                    style={styles.quizButton}
+                    onPress={(e) => {
+                        e.stopPropagation();
+                        openQuizModal(item);
+                    }}
+                >
+                    <Ionicons name="help-circle-outline" size={20} color="#f093fb" />
+                </TouchableOpacity>
+                <TouchableOpacity 
+                    onPress={(e) => {
+                        e.stopPropagation();
+                        handleDelete(item.id);
+                    }} 
+                    style={styles.deleteButton}
+                >
+                    <Ionicons name="trash-outline" size={22} color="#ff6b6b" />
+                </TouchableOpacity>
+            </View>
         </TouchableOpacity>
     );
 
@@ -125,6 +234,131 @@ export default function NotesScreen() {
                 onClose={() => setPreviewModalVisible(false)}
                 note={selectedNote}
             />
+
+            {/* Quiz Generation Modal */}
+            <Modal
+                visible={quizModalVisible}
+                animationType="slide"
+                transparent={false}
+                onRequestClose={closeQuizModal}
+            >
+                <SafeAreaView style={styles.modalSafeAreView}>
+                    <View style={styles.modalContainer}>
+                        {/* Modal Header */}
+                        <View style={styles.modalHeader}>
+                            <View style={styles.modalTitleContainer}>
+                                <Text style={styles.modalTitle}>Generate Quiz</Text>
+                                <TouchableOpacity 
+                                    onPress={closeQuizModal}
+                                    style={styles.closeButton}
+                                >
+                                    <Ionicons name="close" size={24} color="#6b7280" />
+                                </TouchableOpacity>
+                            </View>
+                            {selectedNote && (
+                                <Text style={styles.selectedNoteTitle}>
+                                    From: {selectedNote.title}
+                                </Text>
+                            )}
+                        </View>
+
+                        <ScrollView 
+                            style={styles.modalContent}
+                            showsVerticalScrollIndicator={false}
+                        >
+                            {/* Quiz Settings */}
+                            {!generatedQuiz && (
+                                <View style={styles.settingsSection}>
+                                    <Text style={styles.sectionTitle}>Quiz Settings</Text>
+                                    
+                                    <View style={styles.settingGroup}>
+                                        <Text style={styles.settingLabel}>Quiz Type</Text>
+                                        <View style={styles.quizTypeButtons}>
+                                            {(['multiple-choice', 'true-false', 'fill-blank'] as QuizType[]).map((type) => (
+                                                <TouchableOpacity
+                                                    key={type}
+                                                    style={[
+                                                        styles.quizTypeButton,
+                                                        selectedQuizType === type && styles.quizTypeButtonActive
+                                                    ]}
+                                                    onPress={() => setSelectedQuizType(type)}
+                                                >
+                                                    <Text style={[
+                                                        styles.quizTypeButtonText,
+                                                        selectedQuizType === type && styles.quizTypeButtonTextActive
+                                                    ]}>
+                                                        {type.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                                    </Text>
+                                                </TouchableOpacity>
+                                            ))}
+                                        </View>
+                                    </View>
+
+                                    <View style={styles.settingGroup}>
+                                        <Text style={styles.settingLabel}>Number of Questions</Text>
+                                        <View style={styles.questionCountButtons}>
+                                            {[3, 5, 10, 15].map((count) => (
+                                                <TouchableOpacity
+                                                    key={count}
+                                                    style={[
+                                                        styles.questionCountButton,
+                                                        numberOfQuestions === count && styles.questionCountButtonActive
+                                                    ]}
+                                                    onPress={() => setNumberOfQuestions(count)}
+                                                >
+                                                    <Text style={[
+                                                        styles.questionCountButtonText,
+                                                        numberOfQuestions === count && styles.questionCountButtonTextActive
+                                                    ]}>
+                                                        {count}
+                                                    </Text>
+                                                </TouchableOpacity>
+                                            ))}
+                                        </View>
+                                    </View>
+
+                                    <TouchableOpacity
+                                        style={[
+                                            styles.generateButton,
+                                            isGenerating && styles.generateButtonDisabled
+                                        ]}
+                                        onPress={generateQuiz}
+                                        disabled={isGenerating}
+                                    >
+                                        {isGenerating ? (
+                                            <ActivityIndicator color="white" size="small" />
+                                        ) : (
+                                            <>
+                                                <Ionicons name="sparkles-outline" size={20} color="white" />
+                                                <Text style={styles.generateButtonText}>
+                                                    Generate Quiz (2 Credits)
+                                                </Text>
+                                            </>
+                                        )}
+                                    </TouchableOpacity>
+                                </View>
+                            )}
+
+                            {/* Generated Quiz */}
+                            {generatedQuiz && (
+                                <View style={styles.quizSection}>
+                                    <Text style={styles.sectionTitle}>Generated Quiz</Text>
+                                    <View style={styles.quizContent}>
+                                        <Text style={styles.quizText}>{generatedQuiz}</Text>
+                                    </View>
+                                    <TouchableOpacity
+                                        style={styles.saveButton}
+                                        onPress={saveGeneratedQuiz}
+                                    >
+                                        <Ionicons name="save-outline" size={20} color="white" />
+                                        <Text style={styles.saveButtonText}>Save Quiz</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            )}
+                        </ScrollView>
+                    </View>
+                </SafeAreaView>
+            </Modal>
         </View>
     );
 }
@@ -199,8 +433,17 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: '#9ca3af',
     },
+    noteActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    quizButton: {
+        padding: 8,
+        borderRadius: 8,
+        backgroundColor: '#f0f0ff',
+    },
     deleteButton: {
-        marginLeft: 16,
         padding: 8,
         justifyContent: 'center',
     },
@@ -232,5 +475,162 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.3,
         shadowRadius: 4,
         elevation: 8,
+    },
+    // Modal styles
+    modalSafeAreView: {
+        flex: 1,
+        backgroundColor: 'white'
+    },
+    modalContainer: {
+        flex: 1,
+        backgroundColor: 'white',
+    },
+    modalHeader: {
+        paddingTop: Platform.OS === 'ios' ? 12 : 28,
+        paddingHorizontal: 20,
+        paddingBottom: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f3f4f6',
+    },
+    modalTitleContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: '700',
+        color: '#111827',
+    },
+    closeButton: {
+        padding: 4,
+    },
+    selectedNoteTitle: {
+        fontSize: 14,
+        color: '#6b7280',
+        fontStyle: 'italic',
+    },
+    modalContent: {
+        flex: 1,
+        paddingHorizontal: 20,
+    },
+    settingsSection: {
+        marginVertical: 24,
+    },
+    sectionTitle: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: '#111827',
+        marginBottom: 16,
+    },
+    settingGroup: {
+        marginBottom: 24,
+    },
+    settingLabel: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#374151',
+        marginBottom: 12,
+    },
+    quizTypeButtons: {
+        flexDirection: 'row',
+        gap: 8,
+    },
+    quizTypeButton: {
+        flex: 1,
+        backgroundColor: '#f9fafb',
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+        borderRadius: 12,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        alignItems: 'center',
+    },
+    quizTypeButtonActive: {
+        backgroundColor: '#f093fb',
+        borderColor: '#f093fb',
+    },
+    quizTypeButtonText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#4b5563',
+    },
+    quizTypeButtonTextActive: {
+        color: 'white',
+    },
+    questionCountButtons: {
+        flexDirection: 'row',
+        gap: 8,
+    },
+    questionCountButton: {
+        flex: 1,
+        backgroundColor: '#f9fafb',
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+        borderRadius: 12,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        alignItems: 'center',
+    },
+    questionCountButtonActive: {
+        backgroundColor: '#f093fb',
+        borderColor: '#f093fb',
+    },
+    questionCountButtonText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#4b5563',
+    },
+    questionCountButtonTextActive: {
+        color: 'white',
+    },
+    generateButton: {
+        backgroundColor: '#f093fb',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 16,
+        borderRadius: 12,
+        marginTop: 16,
+    },
+    generateButtonDisabled: {
+        backgroundColor: '#9ca3af',
+    },
+    generateButtonText: {
+        color: 'white',
+        fontSize: 16,
+        fontWeight: '600',
+        marginLeft: 8,
+    },
+    quizSection: {
+        marginBottom: 24,
+    },
+    quizContent: {
+        backgroundColor: '#f9fafb',
+        borderRadius: 12,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+    },
+    quizText: {
+        fontSize: 14,
+        color: '#374151',
+        lineHeight: 22,
+    },
+    saveButton: {
+        backgroundColor: '#f093fb',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 16,
+        borderRadius: 12,
+        marginTop: 16,
+    },
+    saveButtonText: {
+        color: 'white',
+        fontSize: 16,
+        fontWeight: '600',
+        marginLeft: 8,
     },
 });

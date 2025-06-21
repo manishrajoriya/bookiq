@@ -3,15 +3,14 @@ import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useCallback, useRef, useState } from 'react';
 import {
-    ActionSheetIOS,
     ActivityIndicator,
     Alert,
     Animated,
     Dimensions,
-    FlatList,
     Image,
     Modal,
     Platform,
+    SafeAreaView,
     ScrollView,
     StatusBar,
     StyleSheet,
@@ -22,58 +21,66 @@ import {
     View
 } from 'react-native';
 import NoteReaderModal from '../components/NoteReaderModal';
-import { processImage } from '../services/geminiServices';
-import { addHistory, addScanNote, getAllScanNotes, spendCredits } from '../services/historyStorage';
+import { generateQuizFromNotes, processImage } from '../services/geminiServices';
+import { addHistory, addQuiz, getAllQuizzes, resetQuizTable, spendCredits } from '../services/historyStorage';
 
 const { width, height } = Dimensions.get('window');
 
 // Enhanced interfaces
-interface ScanNote {
+interface Quiz {
   id: number;
   title: string;
   content: string;
-  imageUri?: string;
-  createdAt: Date;
-  wordCount: number;
-  tags?: string[];
+  quiz_type: string;
+  number_of_questions: number;
+  source_note_id?: number;
+  source_note_type?: string;
+  createdAt: string;
 }
 
-interface ScanState {
-  isScanning: boolean;
-  isProcessing: boolean;
-  isSaving: boolean;
+interface QuizState {
+  isGenerating: boolean;
   progress: number;
 }
 
 interface ErrorState {
-  type: 'camera' | 'processing' | 'saving' | 'credits' | 'network' | null;
+  type: 'generating' | 'credits' | 'network' | 'scanning' | null;
   message: string;
-  code?: string;
   retryable: boolean;
 }
 
-interface ImageScanResult {
-  success: boolean;
-  text?: string;
-  confidence?: number;
-  error?: string;
-}
+type QuizType = 'multiple-choice' | 'true-false' | 'fill-blank';
 
-const StudyNotes = () => {
+const QuizMaker = () => {
   // State management
-  const [notes, setNotes] = useState<ScanNote[]>([]);
+  const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [loading, setLoading] = useState(true);
-  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedQuiz, setSelectedQuiz] = useState<Quiz | null>(null);
   const [previewModalVisible, setPreviewModalVisible] = useState(false);
-  const [selectedNote, setSelectedNote] = useState<ScanNote | null>(null);
   
-  // Scan state
-  const [scanState, setScanState] = useState<ScanState>({
-    isScanning: false,
-    isProcessing: false,
-    isSaving: false,
+  // Quiz generation state
+  const [quizModalVisible, setQuizModalVisible] = useState(false);
+  const [generatedQuiz, setGeneratedQuiz] = useState<string>('');
+  const [selectedQuizType, setSelectedQuizType] = useState<QuizType>('multiple-choice');
+  const [numberOfQuestions, setNumberOfQuestions] = useState<number>(5);
+  const [quizState, setQuizState] = useState<QuizState>({
+    isGenerating: false,
     progress: 0
   });
+  
+  // Scan state for direct quiz generation
+  const [scanModalVisible, setScanModalVisible] = useState(false);
+  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [extractedText, setExtractedText] = useState<string>('');
+  const [isScanning, setIsScanning] = useState(false);
+  
+  // Manual quiz creation state
+  const [manualQuizModalVisible, setManualQuizModalVisible] = useState(false);
+  const [manualQuizTitle, setManualQuizTitle] = useState('');
+  const [manualQuizContent, setManualQuizContent] = useState('');
+  const [manualQuizType, setManualQuizType] = useState<QuizType>('multiple-choice');
+  const [manualQuizQuestions, setManualQuizQuestions] = useState<number>(5);
+  const [isSavingManualQuiz, setIsSavingManualQuiz] = useState(false);
   
   // Error handling
   const [error, setError] = useState<ErrorState>({
@@ -81,24 +88,15 @@ const StudyNotes = () => {
     message: '',
     retryable: false
   });
-  
-  // Form state
-  const [imageUri, setImageUri] = useState<string | null>(null);
-  const [noteTitle, setNoteTitle] = useState('');
-  const [noteContent, setNoteContent] = useState('');
-  const [extractedText, setExtractedText] = useState('');
-  const [scanConfidence, setScanConfidence] = useState<number>(0);
 
   // Animation refs
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
-
-  // New state for picker modal
-  const [showPickerModal, setShowPickerModal] = useState(false);
+  const scrollY = useRef(new Animated.Value(0)).current;
 
   // Enhanced error handling
-  const handleError = (type: ErrorState['type'], message: string, retryable: boolean = true, code?: string) => {
-    setError({ type, message, retryable, code });
+  const handleError = (type: ErrorState['type'], message: string, retryable: boolean = true) => {
+    setError({ type, message, retryable });
     if (Platform.OS !== 'web') {
       Vibration.vibrate(100);
     }
@@ -108,23 +106,27 @@ const StudyNotes = () => {
     setError({ type: null, message: '', retryable: false });
   };
 
-  const loadNotes = useCallback(async () => {
+  const loadQuizzes = useCallback(async () => {
     try {
       setLoading(true);
       clearError();
-      const scanNotes = await getAllScanNotes();
       
-      // Enhanced notes with word count
-      const enhancedNotes = scanNotes.map(note => ({
-        ...note,
-        createdAt: new Date(note.createdAt),
-        wordCount: note.content.split(/\s+/).filter(word => word.length > 0).length
+      const quizzesData = await getAllQuizzes();
+      
+      const enhancedQuizzes = quizzesData.map(quiz => ({
+        ...quiz,
+        createdAt: new Date(quiz.createdAt).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        })
       }));
       
-      setNotes(enhancedNotes);
+      setQuizzes(enhancedQuizzes);
     } catch (error) {
-      console.error('Failed to load notes:', error);
-      handleError('network', 'Failed to load notes. Please check your connection and try again.', true);
+      console.error('Failed to load quizzes:', error);
+      handleError('network', 'Failed to load quizzes. Please check your connection and try again.', true);
     } finally {
       setLoading(false);
     }
@@ -132,186 +134,41 @@ const StudyNotes = () => {
 
   useFocusEffect(
     useCallback(() => {
-      loadNotes();
-    }, [loadNotes])
+      loadQuizzes();
+    }, [loadQuizzes])
   );
 
-  const resetModalState = () => {
-    clearError();
-    setImageUri(null);
-    setNoteTitle('');
-    setNoteContent('');
-    setExtractedText('');
-    setScanConfidence(0);
-    setScanState({
-      isScanning: false,
-      isProcessing: false,
-      isSaving: false,
-      progress: 0
-    });
-  };
-
+  // Scan handlers for direct quiz generation
   const openScanModal = () => {
-    resetModalState();
-    setModalVisible(true);
-    // Fade in animation
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const openScanPicker = () => {
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: ['Cancel', 'Camera', 'Gallery'],
-          cancelButtonIndex: 0,
-        },
-        (buttonIndex) => {
-          if (buttonIndex === 1) handleCameraScan();
-          if (buttonIndex === 2) handleGalleryScan();
-        }
-      );
-    } else {
-      setShowPickerModal(true);
-    }
+    setScanModalVisible(true);
+    setImageUri(null);
+    setExtractedText('');
+    clearError();
   };
 
   const closeScanModal = () => {
-    if (scanState.isProcessing || scanState.isSaving) {
+    if (isScanning) {
       Alert.alert(
-        'Operation in Progress',
-        'Please wait for the current operation to complete.',
+        'Scan in Progress',
+        'Please wait for the scan to complete.',
         [{ text: 'OK' }]
       );
       return;
     }
-
-    Animated.timing(fadeAnim, {
-      toValue: 0,
-      duration: 200,
-      useNativeDriver: true,
-    }).start(() => {
-      setModalVisible(false);
-      resetModalState();
-    });
-  };
-
-  const requestPermissions = async (): Promise<boolean> => {
-    try {
-      if (Platform.OS !== 'web') {
-        const { status } = await ImagePicker.requestCameraPermissionsAsync();
-        if (status !== 'granted') {
-          Alert.alert(
-            'Camera Permission Required',
-            'Please grant camera permission to scan documents. You can enable it in your device settings.',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { 
-                text: 'Settings', 
-                onPress: () => {
-                  // In a real app, you'd open device settings
-                  console.log('Open device settings');
-                }
-              }
-            ]
-          );
-          return false;
-        }
-      }
-      return true;
-    } catch (error) {
-      handleError('camera', 'Failed to request camera permissions.', true);
-      return false;
-    }
-  };
-
-  const processImageScan = async (uri: string): Promise<ImageScanResult> => {
-    try {
-      setScanState(prev => ({ ...prev, isProcessing: true, progress: 10 }));
-      
-      // Check credits first
-      const hasEnoughCredits = await spendCredits(1);
-      if (!hasEnoughCredits) {
-        return {
-          success: false,
-          error: 'Insufficient credits. Please purchase more credits to continue scanning.'
-        };
-      }
-
-      setScanState(prev => ({ ...prev, progress: 30 }));
-
-      // Process image with Gemini
-      const extractedText = await processImage(uri);
-      
-      setScanState(prev => ({ ...prev, progress: 80 }));
-
-      if (!extractedText || extractedText.trim().length === 0) {
-        return {
-          success: false,
-          error: 'No text could be detected in the image. Please try with a clearer image containing text.'
-        };
-      }
-
-      // Simulate confidence calculation (in real app, this might come from the AI service)
-      const confidence = Math.min(95, Math.max(60, extractedText.length / 10));
-      
-      setScanState(prev => ({ ...prev, progress: 100 }));
-
-      return {
-        success: true,
-        text: extractedText,
-        confidence: confidence
-      };
-
-    } catch (error) {
-      console.error('Image processing error:', error);
-      return {
-        success: false,
-        error: 'Failed to process the image. Please try again with a clearer image.'
-      };
-    } finally {
-      setScanState(prev => ({ ...prev, isProcessing: false, progress: 0 }));
-    }
-  };
-
-  const handleImageSelection = async (result: ImagePicker.ImagePickerResult) => {
-    if (result.canceled || !result.assets || result.assets.length === 0) {
-      return;
-    }
-
-    const asset = result.assets[0];
-    if (!asset.uri) {
-      handleError('processing', 'Invalid image selected. Please try again.', true);
-      return;
-    }
-
-    setImageUri(asset.uri);
-    
-    // Process the image
-    const scanResult = await processImageScan(asset.uri);
-    
-    if (scanResult.success && scanResult.text) {
-      setExtractedText(scanResult.text);
-      setScanConfidence(scanResult.confidence || 0);
-      setNoteTitle('Scanned Document');
-      setNoteContent(scanResult.text);
-      clearError();
-    } else {
-      handleError('processing', scanResult.error || 'Failed to extract text from image.', true);
-    }
+    setScanModalVisible(false);
+    setImageUri(null);
+    setExtractedText('');
+    clearError();
   };
 
   const handleCameraScan = async () => {
     try {
       clearError();
-      setScanState(prev => ({ ...prev, isScanning: true }));
+      setIsScanning(true);
 
-      const hasPermission = await requestPermissions();
-      if (!hasPermission) {
-        setScanState(prev => ({ ...prev, isScanning: false }));
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Camera Permission Required', 'Please grant camera permission to scan documents.');
         return;
       }
 
@@ -322,156 +179,372 @@ const StudyNotes = () => {
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
       });
 
-      await handleImageSelection(result);
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        setImageUri(asset.uri);
+        await processScannedImage(asset.uri);
+      }
     } catch (error) {
       console.error('Camera error:', error);
-      handleError('camera', 'Failed to capture image. Please try again.', true);
+      handleError('scanning', 'Failed to capture image. Please try again.', true);
     } finally {
-      setScanState(prev => ({ ...prev, isScanning: false }));
+      setIsScanning(false);
     }
   };
 
   const handleGalleryScan = async () => {
     try {
       clearError();
-      setScanState(prev => ({ ...prev, isScanning: true }));
+      setIsScanning(true);
 
       const result = await ImagePicker.launchImageLibraryAsync({
         allowsEditing: true,
         quality: 0.9,
+        aspect: [4, 3],
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
       });
 
-      await handleImageSelection(result);
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        setImageUri(asset.uri);
+        await processScannedImage(asset.uri);
+      }
     } catch (error) {
       console.error('Gallery error:', error);
-      handleError('processing', 'Failed to select image from gallery. Please try again.', true);
+      handleError('scanning', 'Failed to select image from gallery. Please try again.', true);
     } finally {
-      setScanState(prev => ({ ...prev, isScanning: false }));
+      setIsScanning(false);
     }
   };
 
-  const handleSaveNote = async () => {
-    if (!noteTitle.trim()) {
-      handleError('saving', 'Please enter a title for your note.', false);
+  const processScannedImage = async (uri: string) => {
+    try {
+      const hasEnoughCredits = await spendCredits(1);
+      if (!hasEnoughCredits) {
+        handleError('credits', 'Insufficient credits. You need 1 credit to scan and 2 credits to generate quiz.', false);
+        return;
+      }
+
+      const text = await processImage(uri);
+      if (!text || text.trim().length === 0) {
+        handleError('scanning', 'No text could be detected in the image. Please try with a clearer image.', true);
+        return;
+      }
+
+      setExtractedText(text.trim());
+      clearError();
+    } catch (error) {
+      console.error('Image processing error:', error);
+      handleError('scanning', 'Failed to process the image. Please try again with a clearer image.', true);
+    }
+  };
+
+  const generateQuiz = async () => {
+    if (!selectedQuiz) return;
+
+    try {
+      setQuizState(prev => ({ ...prev, isGenerating: true }));
+      clearError();
+
+      const hasEnoughCredits = await spendCredits(2);
+      if (!hasEnoughCredits) {
+        handleError('credits', 'You need 2 credits to generate a quiz. Please purchase more credits.', false);
+        return;
+      }
+
+      setQuizState(prev => ({ ...prev, progress: 30 }));
+
+      const quiz = await generateQuizFromNotes(
+        selectedQuiz.content,
+        selectedQuizType,
+        numberOfQuestions
+      );
+
+      setQuizState(prev => ({ ...prev, progress: 80 }));
+
+      setGeneratedQuiz(quiz);
+      setQuizState(prev => ({ ...prev, progress: 100 }));
+
+      // Add to history
+      await addHistory('', 'quiz-maker', selectedQuiz.title, quiz);
+
+    } catch (error) {
+      console.error('Quiz generation error:', error);
+      handleError('generating', 'Failed to generate quiz. Please try again.', true);
+    } finally {
+      setQuizState(prev => ({ ...prev, isGenerating: false, progress: 0 }));
+    }
+  };
+
+  const saveGeneratedQuiz = async () => {
+    if (!generatedQuiz || !selectedQuiz) return;
+
+    try {
+      const quizTitle = `${selectedQuiz.title} - ${selectedQuizType.replace('-', ' ')} Quiz`;
+      
+      await addQuiz(
+        quizTitle,
+        generatedQuiz,
+        selectedQuizType,
+        numberOfQuestions,
+        selectedQuiz.id,
+        selectedQuiz.source_note_type as 'note' | 'scan-note'
+      );
+
+      // Refresh the quiz list
+      await loadQuizzes();
+      
+      Alert.alert(
+        'Success!', 
+        'Quiz has been saved successfully.',
+        [{ text: 'OK' }]
+      );
+      
+      closeQuizModal();
+    } catch (error) {
+      console.error('Failed to save quiz:', error);
+      Alert.alert('Error', 'Failed to save quiz. Please try again.');
+    }
+  };
+
+  const generateQuizFromScan = async () => {
+    if (!extractedText) return;
+
+    try {
+      setQuizState(prev => ({ ...prev, isGenerating: true }));
+      clearError();
+
+      const hasEnoughCredits = await spendCredits(2);
+      if (!hasEnoughCredits) {
+        handleError('credits', 'You need 2 credits to generate a quiz. Please purchase more credits.', false);
+        return;
+      }
+
+      setQuizState(prev => ({ ...prev, progress: 30 }));
+
+      const quiz = await generateQuizFromNotes(
+        extractedText,
+        selectedQuizType,
+        numberOfQuestions
+      );
+
+      setQuizState(prev => ({ ...prev, progress: 80 }));
+
+      setGeneratedQuiz(quiz);
+      setQuizState(prev => ({ ...prev, progress: 100 }));
+
+      // Add to history
+      await addHistory(imageUri || '', 'quiz-maker', 'Scanned Document', quiz);
+
+    } catch (error) {
+      console.error('Quiz generation error:', error);
+      handleError('generating', 'Failed to generate quiz. Please try again.', true);
+    } finally {
+      setQuizState(prev => ({ ...prev, isGenerating: false, progress: 0 }));
+    }
+  };
+
+  const saveScannedQuiz = async () => {
+    if (!generatedQuiz) return;
+
+    try {
+      const quizTitle = `Scanned Document - ${selectedQuizType.replace('-', ' ')} Quiz`;
+      
+      await addQuiz(
+        quizTitle,
+        generatedQuiz,
+        selectedQuizType,
+        numberOfQuestions
+      );
+
+      // Refresh the quiz list
+      await loadQuizzes();
+      
+      Alert.alert(
+        'Success!', 
+        'Quiz has been saved successfully.',
+        [{ text: 'OK' }]
+      );
+      
+      closeScanModal();
+    } catch (error) {
+      console.error('Failed to save quiz:', error);
+      Alert.alert('Error', 'Failed to save quiz. Please try again.');
+    }
+  };
+
+  const openManualQuizModal = () => {
+    setManualQuizTitle('');
+    setManualQuizContent('');
+    setManualQuizType('multiple-choice');
+    setManualQuizQuestions(5);
+    setManualQuizModalVisible(true);
+  };
+
+  const closeManualQuizModal = () => {
+    if (isSavingManualQuiz) {
+      Alert.alert(
+        'Saving in Progress',
+        'Please wait for the quiz to be saved.',
+        [{ text: 'OK' }]
+      );
       return;
     }
-    
-    if (!noteContent.trim()) {
-      handleError('saving', 'Note content cannot be empty.', false);
+    setManualQuizModalVisible(false);
+    setManualQuizTitle('');
+    setManualQuizContent('');
+    setManualQuizType('multiple-choice');
+    setManualQuizQuestions(5);
+  };
+
+  const saveManualQuiz = async () => {
+    if (!manualQuizTitle.trim() || !manualQuizContent.trim()) {
+      Alert.alert('Error', 'Please fill in both title and content for the quiz.');
       return;
     }
 
     try {
-      setScanState(prev => ({ ...prev, isSaving: true }));
-      clearError();
+      setIsSavingManualQuiz(true);
       
-      await addScanNote(noteTitle.trim(), noteContent.trim());
-      await addHistory('', 'scan-notes', noteTitle.trim(), noteContent.trim());
-      
-      closeScanModal();
-      await loadNotes();
-      
-      // Success animation
-      Animated.sequence([
-        Animated.timing(scaleAnim, { toValue: 0.95, duration: 100, useNativeDriver: true }),
-        Animated.timing(scaleAnim, { toValue: 1, duration: 100, useNativeDriver: true })
-      ]).start();
+      await addQuiz(
+        manualQuizTitle.trim(),
+        manualQuizContent.trim(),
+        manualQuizType,
+        manualQuizQuestions
+      );
+
+      // Refresh the quiz list
+      await loadQuizzes();
       
       Alert.alert(
         'Success!', 
-        'Your note has been saved successfully.',
-        [{ text: 'OK' }],
-        { cancelable: false }
+        'Quiz has been saved successfully.',
+        [{ text: 'OK' }]
       );
+      
+      closeManualQuizModal();
     } catch (error) {
-      console.error('Save note error:', error);
-      handleError('saving', 'Failed to save note. Please try again.', true);
+      console.error('Failed to save manual quiz:', error);
+      Alert.alert('Error', 'Failed to save quiz. Please try again.');
     } finally {
-      setScanState(prev => ({ ...prev, isSaving: false }));
+      setIsSavingManualQuiz(false);
     }
+  };
+
+  const handleResetQuizTable = async () => {
+    Alert.alert(
+      'Reset Quiz Table',
+      'This will delete all quizzes and recreate the table with the correct schema. This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await resetQuizTable();
+              await loadQuizzes();
+              Alert.alert('Success', 'Quiz table has been reset successfully.');
+            } catch (error) {
+              console.error('Failed to reset quiz table:', error);
+              Alert.alert('Error', 'Failed to reset quiz table. Please try again.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const openNotePreview = (quiz: Quiz) => {
+    setSelectedQuiz(quiz);
+    setPreviewModalVisible(true);
+  };
+
+  const openQuizModal = (quiz: Quiz) => {
+    setSelectedQuiz(quiz);
+    setQuizModalVisible(true);
+    setGeneratedQuiz('');
+    clearError();
+  };
+
+  const closeQuizModal = () => {
+    if (quizState.isGenerating) {
+      Alert.alert(
+        'Generation in Progress',
+        'Please wait for the quiz generation to complete.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+    setQuizModalVisible(false);
+    setSelectedQuiz(null);
+    setGeneratedQuiz('');
+    clearError();
   };
 
   const retryLastAction = () => {
     switch (error.type) {
-      case 'camera':
-        handleCameraScan();
-        break;
-      case 'processing':
-        if (imageUri) {
-          processImageScan(imageUri);
+      case 'generating':
+        if (selectedQuiz) {
+          generateQuiz();
+        } else if (extractedText) {
+          generateQuizFromScan();
         }
         break;
-      case 'saving':
-        handleSaveNote();
+      case 'scanning':
+        if (imageUri) {
+          processScannedImage(imageUri);
+        }
         break;
       case 'network':
-        loadNotes();
+        loadQuizzes();
         break;
       default:
         clearError();
     }
   };
 
-  const openNotePreview = (note: ScanNote) => {
-    setSelectedNote(note);
-    setPreviewModalVisible(true);
-  };
-
-  const renderNoteItem = ({ item, index }: { item: ScanNote; index: number }) => (
-    <Animated.View
-      style={[
-        styles.noteCard,
-        {
-          transform: [{
-            translateY: fadeAnim.interpolate({
-              inputRange: [0, 1],
-              outputRange: [50, 0]
-            })
-          }],
-          opacity: fadeAnim
-        }
-      ]}
-    >
+  const renderNoteItem = ({ item, index }: { item: Quiz; index: number }) => (
+    <View style={styles.noteCardContainer}>
       <TouchableOpacity 
         onPress={() => openNotePreview(item)}
         activeOpacity={0.8}
-        style={styles.noteCardContent}
+        style={styles.noteCard}
       >
-        <View style={styles.noteHeader}>
-          <Text style={styles.noteTitle} numberOfLines={1} ellipsizeMode="tail">
-            {item.title}
+        <View style={styles.noteCardContent}>
+          <View style={styles.noteHeader}>
+            <Text style={styles.noteTitle} numberOfLines={1} ellipsizeMode="tail">
+              {item.title}
+            </Text>
+            <View style={styles.noteMetadata}>
+              <Text style={styles.wordCount}>{item.quiz_type.replace('-', ' ')}</Text>
+            </View>
+          </View>
+          
+          <Text 
+            numberOfLines={3} 
+            style={styles.noteContent}
+            ellipsizeMode="tail"
+          >
+            {item.content}
           </Text>
-          <View style={styles.noteMetadata}>
-            <Text style={styles.wordCount}>{item.wordCount} words</Text>
+          
+          <View style={styles.noteFooter}>
+            <Text style={styles.noteDate}>
+              {item.createdAt}
+            </Text>
+            <View style={styles.noteActions}>
+              <TouchableOpacity 
+                style={styles.quizButton}
+                onPress={() => openQuizModal(item)}
+              >
+                <Ionicons name="help-circle-outline" size={16} color="#f093fb" />
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
-        
-        <Text 
-          numberOfLines={3} 
-          style={styles.noteContent}
-          ellipsizeMode="tail"
-        >
-          {item.content}
-        </Text>
-        
-        <View style={styles.noteFooter}>
-          <Text style={styles.noteDate}>
-            {new Date(item.createdAt).toLocaleDateString('en-US', {
-              month: 'short',
-              day: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit'
-            })}
-          </Text>
-          {item.imageUri && (
-            <View style={styles.imageIndicator}>
-              <Ionicons name="image" size={14} color="#667eea" />
-            </View>
-          )}
-        </View>
       </TouchableOpacity>
-    </Animated.View>
+    </View>
   );
 
   const renderEmptyState = () => (
@@ -482,20 +555,33 @@ const StudyNotes = () => {
           { transform: [{ scale: scaleAnim }] }
         ]}
       >
-        <Ionicons name="scan-outline" size={80} color="#e0e7ff" />
+        <Ionicons name="help-circle-outline" size={80} color="#f0f0ff" />
       </Animated.View>
-      <Text style={styles.emptyTitle}>Start Scanning!</Text>
+      <Text style={styles.emptyTitle}>No Saved Quizzes</Text>
       <Text style={styles.emptySubtitle}>
-        Capture text from images, documents, and handwritten notes
+        Generate quizzes from your notes, scan documents, or create them manually
       </Text>
-      <TouchableOpacity 
-        style={styles.primaryButton}
-        onPress={openScanPicker}
-        activeOpacity={0.8}
-      >
-        <Ionicons name="camera-outline" size={20} color="#fff" />
-        <Text style={styles.primaryButtonText}>Scan Your First Note</Text>
-      </TouchableOpacity>
+      <View style={styles.emptyButtons}>
+        <TouchableOpacity 
+          style={styles.manualQuizEmptyButton}
+          onPress={openManualQuizModal}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="add-outline" size={20} color="#fff" />
+          <Text style={styles.manualQuizEmptyButtonText}>Create Quiz</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.scanEmptyButton}
+          onPress={openScanModal}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="scan-outline" size={20} color="#fff" />
+          <Text style={styles.scanEmptyButtonText}>Scan Document</Text>
+        </TouchableOpacity>
+      </View>
+      <Text style={styles.emptyNote}>
+        💡 If you're experiencing database issues, try the red reset button in the header
+      </Text>
     </View>
   );
 
@@ -506,9 +592,9 @@ const StudyNotes = () => {
       <View style={styles.errorBanner}>
         <View style={styles.errorContent}>
           <Ionicons 
-            name="warning-outline" 
+            name="alert-circle-outline" 
             size={20} 
-            color="#dc2626" 
+            color="#ef4444" 
           />
           <Text style={styles.errorMessage}>{error.message}</Text>
         </View>
@@ -524,68 +610,83 @@ const StudyNotes = () => {
           style={styles.dismissButton}
           onPress={clearError}
         >
-          <Ionicons name="close" size={16} color="#dc2626" />
+          <Ionicons name="close" size={16} color="#ef4444" />
         </TouchableOpacity>
       </View>
     );
   };
 
-  const renderScanProgress = () => {
-    if (!scanState.isProcessing) return null;
+  const renderQuizProgress = () => {
+    if (!quizState.isGenerating) return null;
     
     return (
       <View style={styles.progressContainer}>
         <View style={styles.progressHeader}>
-          <Ionicons name="document-text-outline" size={24} color="#667eea" />
-          <Text style={styles.progressTitle}>Processing Image...</Text>
+          <Ionicons name="help-circle-outline" size={24} color="#f093fb" />
+          <Text style={styles.progressTitle}>Generating Quiz...</Text>
         </View>
         <View style={styles.progressBarContainer}>
           <View 
             style={[
               styles.progressBar,
-              { width: `${scanState.progress}%` }
+              { width: `${quizState.progress}%` }
             ]} 
           />
         </View>
-        <Text style={styles.progressText}>{scanState.progress}% complete</Text>
-      </View>
-    );
-  };
-
-  const renderScanResults = () => {
-    if (!extractedText) return null;
-    
-    return (
-      <View style={styles.scanResults}>
-        <View style={styles.scanResultsHeader}>
-          <Ionicons name="checkmark-circle" size={20} color="#22c55e" />
-          <Text style={styles.scanResultsTitle}>Text Extracted Successfully</Text>
-          {scanConfidence > 0 && (
-            <Text style={styles.confidenceScore}>
-              {Math.round(scanConfidence)}% confidence
-            </Text>
-          )}
-        </View>
-        <View style={styles.extractedTextPreview}>
-          <Text style={styles.extractedText} numberOfLines={3}>
-            {extractedText}
-          </Text>
-        </View>
+        <Text style={styles.progressText}>{quizState.progress}% complete</Text>
       </View>
     );
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Scan Notes</Text>
-        <Text style={styles.headerSubtitle}>
-          {notes.length} {notes.length === 1 ? 'note' : 'notes'}
-        </Text>
-      </View>
+      {/* Header with animated shadow */}
+      <Animated.View style={[
+        styles.header,
+        {
+          shadowOpacity: scrollY.interpolate({
+            inputRange: [0, 10],
+            outputRange: [0, 0.1],
+            extrapolate: 'clamp'
+          }),
+          elevation: scrollY.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0, 2],
+            extrapolate: 'clamp'
+          })
+        }
+      ]}>
+        <View style={styles.headerContent}>
+          <View style={styles.headerText}>
+            <Text style={styles.headerTitle}>Quiz Maker</Text>
+            <Text style={styles.headerSubtitle}>
+              {quizzes.length} saved {quizzes.length === 1 ? 'quiz' : 'quizzes'}
+            </Text>
+          </View>
+          <View style={styles.headerButtons}>
+            <TouchableOpacity 
+              style={styles.manualQuizButton}
+              onPress={openManualQuizModal}
+            >
+              <Ionicons name="add-outline" size={24} color="#10b981" />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.scanButton}
+              onPress={openScanModal}
+            >
+              <Ionicons name="scan-outline" size={24} color="#f093fb" />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.resetButton}
+              onPress={handleResetQuizTable}
+            >
+              <Ionicons name="refresh-outline" size={24} color="#ef4444" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Animated.View>
 
       {/* Error Banner */}
       {renderError()}
@@ -593,57 +694,210 @@ const StudyNotes = () => {
       {/* Content */}
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#667eea" />
-          <Text style={styles.loadingText}>Loading your notes...</Text>
+          <ActivityIndicator size="large" color="#f093fb" />
+          <Text style={styles.loadingText}>Loading your quizzes...</Text>
         </View>
-      ) : notes.length === 0 ? (
+      ) : quizzes.length === 0 ? (
         renderEmptyState()
       ) : (
-        <FlatList
-          data={notes}
-          keyExtractor={item => item.id.toString()}
+        <Animated.FlatList
+          data={quizzes}
+          keyExtractor={(item) => `quiz-${item.id}`}
           contentContainerStyle={styles.listContent}
           renderItem={renderNoteItem}
           showsVerticalScrollIndicator={false}
           onScrollBeginDrag={() => clearError()}
+          onScroll={Animated.event(
+            [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+            { useNativeDriver: false }
+          )}
+          scrollEventThrottle={16}
+          ListHeaderComponent={<View style={{ height: 8 }} />}
+          ListFooterComponent={<View style={{ height: 80 }} />}
         />
       )}
 
-      {/* Floating Action Button */}
-      {notes.length > 0 && (
+      {/* Floating Action Button - Only shown when scrolled */}
+      <Animated.View style={[
+        styles.fabContainer,
+        {
+          opacity: scrollY.interpolate({
+            inputRange: [0, 50],
+            outputRange: [0, 1],
+            extrapolate: 'clamp'
+          }),
+          transform: [{
+            translateY: scrollY.interpolate({
+              inputRange: [0, 50],
+              outputRange: [100, 0],
+              extrapolate: 'clamp'
+            })
+          }]
+        }
+      ]}>
         <TouchableOpacity 
           style={styles.fab} 
-          onPress={openScanPicker}
-          activeOpacity={0.8}
+          onPress={openScanModal}
+          activeOpacity={0.9}
         >
-          <Ionicons name="add" size={28} color="#fff" />
+          <Ionicons name="scan-outline" size={24} color="#fff" />
         </TouchableOpacity>
-      )}
+      </Animated.View>
 
-      {/* Scan Modal */}
+      {/* Note Preview Modal */}
+      <NoteReaderModal
+        visible={previewModalVisible}
+        onClose={() => setPreviewModalVisible(false)}
+        note={selectedQuiz}
+        isScanNote={false}
+      />
+
+      {/* Quiz Generation Modal */}
       <Modal
-        visible={modalVisible}
+        visible={quizModalVisible}
         animationType="slide"
-        transparent
-        onRequestClose={closeScanModal}
+        transparent={false}
+        onRequestClose={closeQuizModal}
       >
-        <View style={styles.modalOverlay}>
-          <Animated.View 
-            style={[
-              styles.modalContainer,
-              { opacity: fadeAnim }
-            ]}
-          >
+        <SafeAreaView style={styles.modalSafeAreView}>
+          <View style={styles.modalContainer}>
             {/* Modal Header */}
             <View style={styles.modalHeader}>
-              <View style={styles.dragHandle} />
               <View style={styles.modalTitleContainer}>
-                <Text style={styles.modalTitle}>Scan Document</Text>
+                <Text style={styles.modalTitle}>Generate Quiz</Text>
+                <TouchableOpacity 
+                  onPress={closeQuizModal}
+                  style={styles.closeButton}
+                >
+                  <Ionicons name="close" size={24} color="#6b7280" />
+                </TouchableOpacity>
+              </View>
+              {selectedQuiz && (
+                <Text style={styles.selectedNoteTitle}>
+                  From: {selectedQuiz.title}
+                </Text>
+              )}
+            </View>
+
+            <ScrollView 
+              style={styles.modalContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Quiz Settings */}
+              {!generatedQuiz && (
+                <View style={styles.settingsSection}>
+                  <Text style={styles.sectionTitle}>Quiz Settings</Text>
+                  
+                  <View style={styles.settingGroup}>
+                    <Text style={styles.settingLabel}>Quiz Type</Text>
+                    <View style={styles.quizTypeButtons}>
+                      {(['multiple-choice', 'true-false', 'fill-blank'] as QuizType[]).map((type) => (
+                        <TouchableOpacity
+                          key={type}
+                          style={[
+                            styles.quizTypeButton,
+                            selectedQuizType === type && styles.quizTypeButtonActive
+                          ]}
+                          onPress={() => setSelectedQuizType(type)}
+                        >
+                          <Text style={[
+                            styles.quizTypeButtonText,
+                            selectedQuizType === type && styles.quizTypeButtonTextActive
+                          ]}>
+                            {type.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+
+                  <View style={styles.settingGroup}>
+                    <Text style={styles.settingLabel}>Number of Questions</Text>
+                    <View style={styles.questionCountButtons}>
+                      {[3, 5, 10, 15].map((count) => (
+                        <TouchableOpacity
+                          key={count}
+                          style={[
+                            styles.questionCountButton,
+                            numberOfQuestions === count && styles.questionCountButtonActive
+                          ]}
+                          onPress={() => setNumberOfQuestions(count)}
+                        >
+                          <Text style={[
+                            styles.questionCountButtonText,
+                            numberOfQuestions === count && styles.questionCountButtonTextActive
+                          ]}>
+                            {count}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.generateButton,
+                      quizState.isGenerating && styles.generateButtonDisabled
+                    ]}
+                    onPress={generateQuiz}
+                    disabled={quizState.isGenerating}
+                  >
+                    {quizState.isGenerating ? (
+                      <ActivityIndicator color="white" size="small" />
+                    ) : (
+                      <>
+                        <Ionicons name="sparkles-outline" size={20} color="white" />
+                        <Text style={styles.generateButtonText}>
+                          Generate Quiz (2 Credits)
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Progress Indicator */}
+              {renderQuizProgress()}
+
+              {/* Generated Quiz */}
+              {generatedQuiz && (
+                <View style={styles.quizSection}>
+                  <Text style={styles.sectionTitle}>Generated Quiz</Text>
+                  <View style={styles.quizContent}>
+                    <Text style={styles.quizText}>{generatedQuiz}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.saveButton}
+                    onPress={saveGeneratedQuiz}
+                  >
+                    <Ionicons name="save-outline" size={20} color="white" />
+                    <Text style={styles.saveButtonText}>Save Quiz</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Scan Modal for Direct Quiz Generation */}
+      <Modal
+        visible={scanModalVisible}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={closeScanModal}
+      >
+        <SafeAreaView style={styles.modalSafeAreView}>
+          <View style={styles.modalContainer}>
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleContainer}>
+                <Text style={styles.modalTitle}>Scan for Quiz</Text>
                 <TouchableOpacity 
                   onPress={closeScanModal}
                   style={styles.closeButton}
                 >
-                  <Ionicons name="close" size={24} color="#666" />
+                  <Ionicons name="close" size={24} color="#6b7280" />
                 </TouchableOpacity>
               </View>
             </View>
@@ -651,56 +905,61 @@ const StudyNotes = () => {
             <ScrollView 
               style={styles.modalContent}
               showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
             >
-              {/* Scan Buttons */}
-              <View style={styles.scanSection}>
-                <Text style={styles.sectionTitle}>Choose Source</Text>
-                <View style={styles.scanButtons}>
-                  <TouchableOpacity 
-                    style={[
-                      styles.scanButton,
-                      scanState.isScanning && styles.scanButtonDisabled
-                    ]}
-                    onPress={handleCameraScan}
-                    disabled={scanState.isScanning || scanState.isProcessing}
-                  >
-                    <Ionicons name="camera-outline" size={24} color="#667eea" />
-                    <Text style={styles.scanButtonText}>Camera</Text>
-                    <Text style={styles.scanButtonSubtext}>Take a photo</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={[
-                      styles.scanButton,
-                      scanState.isScanning && styles.scanButtonDisabled
-                    ]}
-                    onPress={handleGalleryScan}
-                    disabled={scanState.isScanning || scanState.isProcessing}
-                  >
-                    <Ionicons name="image-outline" size={24} color="#667eea" />
-                    <Text style={styles.scanButtonText}>Gallery</Text>
-                    <Text style={styles.scanButtonSubtext}>Choose image</Text>
-                  </TouchableOpacity>
+              {/* Scan Buttons - Only show if no image selected */}
+              {!imageUri && (
+                <View style={styles.scanSection}>
+                  <Text style={styles.sectionTitle}>Scan Document</Text>
+                  <Text style={styles.sectionSubtitle}>
+                    Take a photo or choose from gallery to extract text for quiz generation
+                  </Text>
+                  <View style={styles.scanButtons}>
+                    <TouchableOpacity 
+                      style={[
+                        styles.scanButton,
+                        isScanning && styles.scanButtonDisabled
+                      ]}
+                      onPress={handleCameraScan}
+                      disabled={isScanning}
+                    >
+                      <View style={styles.scanButtonIcon}>
+                        <Ionicons name="camera-outline" size={28} color="#f093fb" />
+                      </View>
+                      <Text style={styles.scanButtonText}>Camera</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      style={[
+                        styles.scanButton,
+                        isScanning && styles.scanButtonDisabled
+                      ]}
+                      onPress={handleGalleryScan}
+                      disabled={isScanning}
+                    >
+                      <View style={styles.scanButtonIcon}>
+                        <Ionicons name="image-outline" size={28} color="#f093fb" />
+                      </View>
+                      <Text style={styles.scanButtonText}>Gallery</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
+              )}
 
               {/* Image Preview */}
               {imageUri && (
                 <View style={styles.imageSection}>
-                  <Text style={styles.sectionTitle}>Scanned Image</Text>
+                  <Text style={styles.sectionTitle}>Document Preview</Text>
                   <View style={styles.imageContainer}>
                     <Image
                       source={{ uri: imageUri }}
                       style={styles.previewImage}
-                      resizeMode="cover"
+                      resizeMode="contain"
                     />
                     <TouchableOpacity
                       style={styles.removeImageButton}
                       onPress={() => {
                         setImageUri(null);
                         setExtractedText('');
-                        setNoteContent('');
                         clearError();
                       }}
                     >
@@ -710,129 +969,279 @@ const StudyNotes = () => {
                 </View>
               )}
 
-              {/* Processing Progress */}
-              {renderScanProgress()}
+              {/* Extracted Text */}
+              {extractedText && (
+                <View style={styles.extractedTextSection}>
+                  <Text style={styles.sectionTitle}>Extracted Text</Text>
+                  <View style={styles.extractedTextContainer}>
+                    <Text style={styles.extractedTextContent}>{extractedText}</Text>
+                  </View>
+                </View>
+              )}
 
-              {/* Scan Results */}
-              {renderScanResults()}
-
-              {/* Note Form */}
-              {(noteContent || noteTitle) && (
-                <View style={styles.formSection}>
-                  <Text style={styles.sectionTitle}>Edit Note</Text>
+              {/* Quiz Settings */}
+              {extractedText && (
+                <View style={styles.quizSettingsSection}>
+                  <Text style={styles.sectionTitle}>Quiz Settings</Text>
                   
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Title</Text>
-                    <TextInput
-                      style={styles.titleInput}
-                      value={noteTitle}
-                      onChangeText={setNoteTitle}
-                      placeholder="Enter note title..."
-                      placeholderTextColor="#9ca3af"
-                      returnKeyType="next"
-                    />
+                  <View style={styles.settingGroup}>
+                    <Text style={styles.settingLabel}>Quiz Type</Text>
+                    <View style={styles.quizTypeButtons}>
+                      {(['multiple-choice', 'true-false', 'fill-blank'] as QuizType[]).map((type) => (
+                        <TouchableOpacity
+                          key={type}
+                          style={[
+                            styles.quizTypeButton,
+                            selectedQuizType === type && styles.quizTypeButtonActive
+                          ]}
+                          onPress={() => setSelectedQuizType(type)}
+                        >
+                          <Text style={[
+                            styles.quizTypeButtonText,
+                            selectedQuizType === type && styles.quizTypeButtonTextActive
+                          ]}>
+                            {type.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
                   </View>
 
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Content</Text>
+                  <View style={styles.settingGroup}>
+                    <Text style={styles.settingLabel}>Number of Questions</Text>
+                    <View style={styles.questionCountButtons}>
+                      {[3, 5, 10, 15].map((count) => (
+                        <TouchableOpacity
+                          key={count}
+                          style={[
+                            styles.questionCountButton,
+                            numberOfQuestions === count && styles.questionCountButtonActive
+                          ]}
+                          onPress={() => setNumberOfQuestions(count)}
+                        >
+                          <Text style={[
+                            styles.questionCountButtonText,
+                            numberOfQuestions === count && styles.questionCountButtonTextActive
+                          ]}>
+                            {count}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                </View>
+              )}
+
+              {/* Generated Quiz from Scan */}
+              {generatedQuiz && (
+                <View style={styles.quizSection}>
+                  <Text style={styles.sectionTitle}>Generated Quiz</Text>
+                  <View style={styles.quizContent}>
+                    <Text style={styles.quizText}>{generatedQuiz}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.saveButton}
+                    onPress={saveScannedQuiz}
+                  >
+                    <Ionicons name="save-outline" size={20} color="white" />
+                    <Text style={styles.saveButtonText}>Save Quiz</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Progress Indicator */}
+              {renderQuizProgress()}
+            </ScrollView>
+
+            {/* Generate Quiz Button */}
+            {extractedText && !generatedQuiz && (
+              <View style={styles.generateButtonSection}>
+                <TouchableOpacity
+                  style={[
+                    styles.generateButton,
+                    quizState.isGenerating && styles.generateButtonDisabled
+                  ]}
+                  onPress={generateQuizFromScan}
+                  disabled={quizState.isGenerating}
+                >
+                  {quizState.isGenerating ? (
+                    <ActivityIndicator color="white" size="small" />
+                  ) : (
+                    <>
+                      <Ionicons name="sparkles-outline" size={20} color="white" />
+                      <Text style={styles.generateButtonText}>
+                        Generate Quiz (2 Credits)
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Manual Quiz Creation Modal */}
+      <Modal
+        visible={manualQuizModalVisible}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={closeManualQuizModal}
+      >
+        <SafeAreaView style={styles.modalSafeAreView}>
+          <View style={styles.modalContainer}>
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleContainer}>
+                <Text style={styles.modalTitle}>Create Manual Quiz</Text>
+                <TouchableOpacity 
+                  onPress={closeManualQuizModal}
+                  style={styles.closeButton}
+                >
+                  <Ionicons name="close" size={24} color="#6b7280" />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <ScrollView 
+              style={styles.modalContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Quiz Form */}
+              <View style={styles.formSection}>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Quiz Title</Text>
+                  <TextInput
+                    style={styles.titleInput}
+                    value={manualQuizTitle}
+                    onChangeText={setManualQuizTitle}
+                    placeholder="Enter quiz title..."
+                    placeholderTextColor="#9ca3af"
+                    returnKeyType="next"
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Quiz Content</Text>
+                  <View style={styles.contentInputContainer}>
                     <TextInput
                       style={styles.contentInput}
-                      value={noteContent}
-                      onChangeText={setNoteContent}
-                      placeholder="Note content will appear here..."
+                      value={manualQuizContent}
+                      onChangeText={setManualQuizContent}
+                      placeholder="Enter your quiz content here...&#10;&#10;Example:&#10;1. What is the capital of France?&#10;   A) London&#10;   B) Paris&#10;   C) Berlin&#10;   D) Madrid&#10;&#10;2. Which planet is closest to the Sun?&#10;   A) Venus&#10;   B) Earth&#10;   C) Mercury&#10;   D) Mars&#10;&#10;ANSWERS:&#10;1. B) Paris&#10;2. C) Mercury"
                       placeholderTextColor="#9ca3af"
                       multiline
                       textAlignVertical="top"
                     />
                   </View>
                 </View>
-              )}
-            </ScrollView>
 
-            {/* Save Button */}
-            {(noteContent || noteTitle) && (
-              <View style={styles.saveSection}>
+                <View style={styles.settingGroup}>
+                  <Text style={styles.settingLabel}>Quiz Type</Text>
+                  <View style={styles.quizTypeButtons}>
+                    {(['multiple-choice', 'true-false', 'fill-blank'] as QuizType[]).map((type) => (
+                      <TouchableOpacity
+                        key={type}
+                        style={[
+                          styles.quizTypeButton,
+                          manualQuizType === type && styles.quizTypeButtonActive
+                        ]}
+                        onPress={() => setManualQuizType(type)}
+                      >
+                        <Text style={[
+                          styles.quizTypeButtonText,
+                          manualQuizType === type && styles.quizTypeButtonTextActive
+                        ]}>
+                          {type.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+
+                <View style={styles.settingGroup}>
+                  <Text style={styles.settingLabel}>Number of Questions</Text>
+                  <View style={styles.questionCountButtons}>
+                    {[3, 5, 10, 15].map((count) => (
+                      <TouchableOpacity
+                        key={count}
+                        style={[
+                          styles.questionCountButton,
+                          manualQuizQuestions === count && styles.questionCountButtonActive
+                        ]}
+                        onPress={() => setManualQuizQuestions(count)}
+                      >
+                        <Text style={[
+                          styles.questionCountButtonText,
+                          manualQuizQuestions === count && styles.questionCountButtonTextActive
+                        ]}>
+                          {count}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+
                 <TouchableOpacity
                   style={[
                     styles.saveButton,
-                    scanState.isSaving && styles.saveButtonDisabled
+                    isSavingManualQuiz && styles.saveButtonDisabled
                   ]}
-                  onPress={handleSaveNote}
-                  disabled={scanState.isSaving}
+                  onPress={saveManualQuiz}
+                  disabled={isSavingManualQuiz}
                 >
-                  {scanState.isSaving ? (
+                  {isSavingManualQuiz ? (
                     <ActivityIndicator color="white" size="small" />
                   ) : (
-                    <Ionicons name="save-outline" size={20} color="white" />
+                    <>
+                      <Ionicons name="save-outline" size={20} color="white" />
+                      <Text style={styles.saveButtonText}>Save Quiz</Text>
+                    </>
                   )}
-                  <Text style={styles.saveButtonText}>
-                    {scanState.isSaving ? 'Saving...' : 'Save Note'}
-                  </Text>
                 </TouchableOpacity>
               </View>
-            )}
-          </Animated.View>
-        </View>
-      </Modal>
-
-      {/* Note Preview Modal */}
-      <NoteReaderModal
-        visible={previewModalVisible}
-        onClose={() => setPreviewModalVisible(false)}
-        note={selectedNote}
-        isScanNote={true}
-      />
-
-      {/* Picker Modal for Android/web */}
-      {showPickerModal && (
-        <Modal
-          transparent
-          animationType="fade"
-          visible={showPickerModal}
-          onRequestClose={() => setShowPickerModal(false)}
-        >
-          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' }}>
-            <View style={{ backgroundColor: 'white', padding: 24, borderTopLeftRadius: 20, borderTopRightRadius: 20 }}>
-              <Text style={{ fontSize: 18, fontWeight: '700', marginBottom: 20 }}>Choose Image Source</Text>
-              <TouchableOpacity style={{ paddingVertical: 16 }} onPress={() => { setShowPickerModal(false); handleCameraScan(); }}>
-                <Text style={{ fontSize: 16 }}>Camera</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={{ paddingVertical: 16 }} onPress={() => { setShowPickerModal(false); handleGalleryScan(); }}>
-                <Text style={{ fontSize: 16 }}>Gallery</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={{ paddingVertical: 16 }} onPress={() => setShowPickerModal(false)}>
-                <Text style={{ fontSize: 16, color: '#ff6b6b' }}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
+            </ScrollView>
           </View>
-        </Modal>
-      )}
-    </View>
+        </SafeAreaView>
+      </Modal>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#f9fafb',
   },
   header: {
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingBottom: 20,
+    paddingTop: Platform.OS === 'ios' ? 60 : 50,
+    paddingBottom: 16,
     paddingHorizontal: 24,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
+    borderBottomColor: '#f3f4f6',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    zIndex: 10,
+  },
+  headerContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  headerText: {
+    flex: 1,
   },
   headerTitle: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#1e293b',
-    marginBottom: 4,
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 2,
   },
   headerSubtitle: {
-    fontSize: 16,
-    color: '#64748b',
+    fontSize: 14,
+    color: '#6b7280',
     fontWeight: '500',
   },
   loadingContainer: {
@@ -844,7 +1253,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#667eea',
+    color: '#f093fb',
     fontWeight: '500',
   },
   emptyState: {
@@ -855,55 +1264,50 @@ const styles = StyleSheet.create({
   },
   emptyIconContainer: {
     marginBottom: 24,
+    backgroundColor: '#f0f0ff',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   emptyTitle: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '700',
-    color: '#1e293b',
+    color: '#111827',
     marginBottom: 8,
+    textAlign: 'center',
   },
   emptySubtitle: {
     fontSize: 16,
-    color: '#64748b',
+    color: '#6b7280',
     textAlign: 'center',
     lineHeight: 24,
     marginBottom: 32,
-  },
-  primaryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#667eea',
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 16,
-    shadowColor: '#667eea',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 5,
-  },
-  primaryButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
+    maxWidth: 300,
   },
   listContent: {
-    padding: 16,
-    paddingBottom: 100,
+    paddingHorizontal: 16,
+  },
+  noteCardContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
+    borderWidth: 1,
+    borderColor: '#f3f4f6',
   },
   noteCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    flex: 1,
   },
   noteCardContent: {
-    padding: 20,
+    padding: 16,
   },
   noteHeader: {
     flexDirection: 'row',
@@ -912,9 +1316,9 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   noteTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1e293b',
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
     flex: 1,
     marginRight: 12,
   },
@@ -923,17 +1327,17 @@ const styles = StyleSheet.create({
   },
   wordCount: {
     fontSize: 12,
-    color: '#667eea',
+    color: '#f093fb',
     fontWeight: '600',
-    backgroundColor: '#f1f5f9',
+    backgroundColor: '#f0f0ff',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
   },
   noteContent: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: '#475569',
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#4b5563',
     marginBottom: 16,
   },
   noteFooter: {
@@ -942,42 +1346,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   noteDate: {
-    fontSize: 13,
-    color: '#94a3b8',
+    fontSize: 12,
+    color: '#9ca3af',
     fontWeight: '500',
   },
   imageIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#e0e7ff',
+    backgroundColor: '#f0f0ff',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
   },
-  fab: {
-    position: 'absolute',
-    right: 24,
-    bottom: 32,
-    backgroundColor: '#667eea',
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    justifyContent: 'center',
+  noteActions: {
+    flexDirection: 'row',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 8,
+  },
+  quizButton: {
+    padding: 4,
+    marginLeft: 8,
   },
   errorBanner: {
     backgroundColor: '#fef2f2',
-    borderBottomWidth: 1,
-    borderBottomColor: '#fecaca',
     paddingHorizontal: 16,
     paddingVertical: 12,
     flexDirection: 'row',
     alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#fee2e2',
   },
   errorContent: {
     flex: 1,
@@ -986,12 +1382,12 @@ const styles = StyleSheet.create({
   },
   errorMessage: {
     fontSize: 14,
-    color: '#dc2626',
+    color: '#ef4444',
     marginLeft: 8,
     flex: 1,
   },
   retryButton: {
-    backgroundColor: '#dc2626',
+    backgroundColor: '#ef4444',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
@@ -1006,99 +1402,255 @@ const styles = StyleSheet.create({
     padding: 4,
     marginLeft: 8,
   },
-  modalOverlay: {
+  modalSafeAreView: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
+    backgroundColor: 'white'
   },
   modalContainer: {
+    flex: 1,
     backgroundColor: 'white',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: height * 0.9,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
   },
   modalHeader: {
-    paddingTop: 12,
+    paddingTop: Platform.OS === 'ios' ? 12 : 28,
     paddingHorizontal: 20,
     paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-  },
-  dragHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: '#cbd5e1',
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: 16,
+    borderBottomColor: '#f3f4f6',
   },
   modalTitleContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 8,
   },
   modalTitle: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '700',
-    color: '#1e293b',
+    color: '#111827',
   },
   closeButton: {
     padding: 4,
+  },
+  selectedNoteTitle: {
+    fontSize: 14,
+    color: '#6b7280',
+    fontStyle: 'italic',
   },
   modalContent: {
     flex: 1,
     paddingHorizontal: 20,
   },
-  scanSection: {
-    marginBottom: 24,
+  settingsSection: {
+    marginVertical: 24,
   },
   sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 16,
+  },
+  settingGroup: {
+    marginBottom: 24,
+  },
+  settingLabel: {
     fontSize: 16,
     fontWeight: '600',
     color: '#374151',
     marginBottom: 12,
   },
-  scanButtons: {
+  quizTypeButtons: {
     flexDirection: 'row',
-    gap: 16,
+    gap: 8,
+  },
+  quizTypeButton: {
+    flex: 1,
+    backgroundColor: '#f9fafb',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  quizTypeButtonActive: {
+    backgroundColor: '#f093fb',
+    borderColor: '#f093fb',
+  },
+  quizTypeButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#4b5563',
+  },
+  quizTypeButtonTextActive: {
+    color: 'white',
+  },
+  questionCountButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  questionCountButton: {
+    flex: 1,
+    backgroundColor: '#f9fafb',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  questionCountButtonActive: {
+    backgroundColor: '#f093fb',
+    borderColor: '#f093fb',
+  },
+  questionCountButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#4b5563',
+  },
+  questionCountButtonTextActive: {
+    color: 'white',
+  },
+  generateButton: {
+    backgroundColor: '#f093fb',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    borderRadius: 12,
+    marginTop: 16,
+  },
+  generateButtonDisabled: {
+    backgroundColor: '#9ca3af',
+  },
+  generateButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  progressContainer: {
+    backgroundColor: '#f9fafb',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  progressTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+    marginLeft: 8,
+  },
+  progressBarContainer: {
+    height: 4,
+    backgroundColor: '#e5e7eb',
+    borderRadius: 2,
+    marginBottom: 8,
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: '#f093fb',
+    borderRadius: 2,
+  },
+  progressText: {
+    fontSize: 12,
+    color: '#6b7280',
+    textAlign: 'center',
+  },
+  quizSection: {
+    marginBottom: 24,
+  },
+  quizContent: {
+    backgroundColor: '#f9fafb',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  quizText: {
+    fontSize: 14,
+    color: '#374151',
+    lineHeight: 22,
   },
   scanButton: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-    borderWidth: 2,
-    borderColor: '#e2e8f0',
-    borderRadius: 16,
-    padding: 20,
+    padding: 4,
+  },
+  fabContainer: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    opacity: 0,
+    transform: [{ translateY: 100 }],
+  },
+  fab: {
+    backgroundColor: '#f093fb',
+    borderRadius: 50,
+    width: 56,
+    height: 56,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scanEmptyButton: {
+    backgroundColor: '#f093fb',
+    padding: 12,
+    borderRadius: 8,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  scanButtonDisabled: {
-    opacity: 0.5,
+  scanEmptyButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  scanSection: {
+    marginBottom: 24,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: '#6b7280',
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 32,
+    maxWidth: 300,
+  },
+  scanButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  scanButtonIcon: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0f0ff',
+    padding: 8,
+    borderRadius: 6,
   },
   scanButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#667eea',
-    marginTop: 8,
+    color: '#4b5563',
   },
-  scanButtonSubtext: {
-    fontSize: 12,
-    color: '#64748b',
-    marginTop: 2,
+  scanButtonDisabled: {
+    backgroundColor: '#9ca3af',
   },
   imageSection: {
     marginBottom: 24,
   },
   imageContainer: {
     position: 'relative',
-    borderRadius: 16,
+    borderRadius: 12,
     overflow: 'hidden',
+    backgroundColor: '#f3f4f6',
+    minHeight: 180,
   },
   previewImage: {
     width: '100%',
-    height: 200,
-    backgroundColor: '#f1f5f9',
+    height: 240,
   },
   removeImageButton: {
     position: 'absolute',
@@ -1108,131 +1660,38 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 6,
   },
-  progressContainer: {
-    backgroundColor: '#f8fafc',
-    borderRadius: 16,
-    padding: 20,
+  extractedTextSection: {
     marginBottom: 24,
   },
-  progressHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  progressTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
-    marginLeft: 8,
-  },
-  progressBarContainer: {
-    height: 6,
-    backgroundColor: '#e2e8f0',
-    borderRadius: 3,
-    marginBottom: 8,
-  },
-  progressBar: {
-    height: '100%',
-    backgroundColor: '#667eea',
-    borderRadius: 3,
-  },
-  progressText: {
-    fontSize: 12,
-    color: '#64748b',
-    textAlign: 'center',
-  },
-  scanResults: {
-    backgroundColor: '#f0fdf4',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 24,
-  },
-  scanResultsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  scanResultsTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#16a34a',
-    marginLeft: 8,
-    flex: 1,
-  },
-  confidenceScore: {
-    fontSize: 12,
-    color: '#16a34a',
-    backgroundColor: '#dcfce7',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  extractedTextPreview: {
-    backgroundColor: 'white',
+  extractedTextContainer: {
+    backgroundColor: '#f9fafb',
     borderRadius: 12,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#bbf7d0',
+    borderColor: '#e5e7eb',
   },
-  extractedText: {
+  extractedTextContent: {
     fontSize: 14,
-    color: '#374151',
+    color: '#4b5563',
     lineHeight: 20,
   },
-  formSection: {
+  quizSettingsSection: {
     marginBottom: 24,
   },
-  inputGroup: {
-    marginBottom: 20,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 8,
-  },
-  titleInput: {
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
-    color: '#1e293b',
-  },
-  contentInput: {
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 15,
-    color: '#1e293b',
-    minHeight: 120,
-    textAlignVertical: 'top',
-  },
-  saveSection: {
-    padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
-    backgroundColor: 'white',
+  generateButtonSection: {
+    marginTop: 16,
+    alignItems: 'center',
   },
   saveButton: {
-    backgroundColor: '#22c55e',
+    backgroundColor: '#f093fb',
+    padding: 12,
+    borderRadius: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
-    borderRadius: 16,
-    shadowColor: '#22c55e',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 5,
   },
   saveButtonDisabled: {
     backgroundColor: '#9ca3af',
-    shadowColor: '#9ca3af',
   },
   saveButtonText: {
     color: 'white',
@@ -1240,6 +1699,74 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginLeft: 8,
   },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  manualQuizButton: {
+    padding: 4,
+    marginLeft: 8,
+  },
+  formSection: {
+    marginVertical: 24,
+  },
+  inputGroup: {
+    marginBottom: 24,
+  },
+  inputLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  titleInput: {
+    backgroundColor: '#f9fafb',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    padding: 16,
+  },
+  contentInputContainer: {
+    backgroundColor: '#f9fafb',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    padding: 16,
+  },
+  contentInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#4b5563',
+  },
+  emptyButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  manualQuizEmptyButton: {
+    backgroundColor: '#f093fb',
+    padding: 12,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  manualQuizEmptyButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  resetButton: {
+    padding: 4,
+    marginLeft: 8,
+  },
+  emptyNote: {
+    fontSize: 14,
+    color: '#6b7280',
+    textAlign: 'center',
+    lineHeight: 24,
+    marginTop: 16,
+  },
 });
 
-export default StudyNotes;
+export default QuizMaker;
