@@ -33,15 +33,15 @@ const Explore = () => {
       { name: 'AI Scan', icon: 'scan-outline', color: '#667eea', bgColor: '#f0f2ff', feature: 'ai-scan' },
         { name: 'My Notes', icon: 'journal-outline', color: '#feca57', bgColor: '#fffef0', feature: 'notes' },
         { name: 'Scan Notes', icon: 'document-text-outline', color: '#4facfe', bgColor: '#f0faff', feature: 'study-notes' },
-        { name: 'Calculator', icon: 'calculator-outline', color: '#764ba2', bgColor: '#f5f0ff', feature: 'calculator' },
+       // { name: 'Calculator', icon: 'calculator-outline', color: '#764ba2', bgColor: '#f5f0ff', feature: 'calculator' },
         { name: 'Quiz Maker', icon: 'help-circle-outline', color: '#f093fb', bgColor: '#fef0ff', feature: 'quiz-maker' },
         { name: 'Flash Cards', icon: 'albums-outline', color: '#43e97b', bgColor: '#f0fff4', feature: 'flash-cards' },
         { name: 'Homework', icon: 'book-outline', color: '#fa709a', bgColor: '#fff0f5', feature: 'homework' },
         { name: 'Magic Eraser', icon: 'sparkles-outline', color: '#ff6b6b', bgColor: '#fff0f0', feature: 'magic-eraser' },
-        { name: 'Voice Notes', icon: 'mic-outline', color: '#4ecdc4', bgColor: '#f0fffe', feature: 'voice-notes' },
-        { name: 'PDF Scanner', icon: 'document-outline', color: '#45b7d1', bgColor: '#f0f9ff', feature: 'pdf-scanner' },
+       // { name: 'Voice Notes', icon: 'mic-outline', color: '#4ecdc4', bgColor: '#f0fffe', feature: 'voice-notes' },
+       // { name: 'PDF Scanner', icon: 'document-outline', color: '#45b7d1', bgColor: '#f0f9ff', feature: 'pdf-scanner' },
         { name: 'Mind Maps', icon: 'git-network-outline', color: '#96ceb4', bgColor: '#f9fff9', feature: 'mind-maps' },
-        { name: 'Translator', icon: 'language-outline', color: '#ff9ff3', bgColor: '#fff0fe', feature: 'translator' },
+       // { name: 'Translator', icon: 'language-outline', color: '#ff9ff3', bgColor: '#fff0fe', feature: 'translator' },
     ];
 
     const allSubjects = [
@@ -51,10 +51,10 @@ const Explore = () => {
         { name: 'Biology', icon: 'leaf-outline', color: '#43e97b', feature: 'ai-scan' },
         { name: 'History', icon: 'time-outline', color: '#ff6b6b',  feature: 'study-notes' },
         { name: 'Geography', icon: 'earth-outline', color: '#4ecdc4',  feature: 'study-notes' },
-        { name: 'Literature', icon: 'library-outline', color: '#45b7d1',  feature: 'study-notes' },
-        { name: 'Computer Science', icon: 'laptop-outline', color: '#96ceb4',  feature: 'ai-scan' },
-        { name: 'Economics', icon: 'trending-up-outline', color: '#feca57', feature: 'study-notes' },
-        { name: 'Psychology', icon: 'bulb-outline', color: '#ff9ff3',  feature: 'study-notes' },
+      //  { name: 'Literature', icon: 'library-outline', color: '#45b7d1',  feature: 'study-notes' },
+       // { name: 'Computer Science', icon: 'laptop-outline', color: '#96ceb4',  feature: 'ai-scan' },
+       // { name: 'Economics', icon: 'trending-up-outline', color: '#feca57', feature: 'study-notes' },
+       // { name: 'Psychology', icon: 'bulb-outline', color: '#ff9ff3',  feature: 'study-notes' },
     ];
 
     const [modalVisible, setModalVisible] = useState(false);

@@ -156,4 +156,51 @@ ANSWERS:
   }
 };
 
+export const generateFlashCardsFromNotes = async (
+  notesContent: string,
+  numberOfCards: number = 10,
+  cardType: 'term-definition' | 'question-answer' = 'term-definition'
+): Promise<string> => {
+  const prompt = `You are an expert flashcard generator. Create a set of flashcards based on the following study notes content.
+
+Study Notes Content:
+"${notesContent}"
+
+Requirements:
+- Generate ${numberOfCards} flashcards.
+- The flashcard type is ${cardType}.
+- For 'term-definition', provide a key term and its definition.
+- For 'question-answer', provide a question and a concise answer.
+- Format the output clearly, separating the front and back of each card.
+- Ensure the content is accurate and directly related to the provided notes.
+
+Please format your response as follows, using '---' to separate cards:
+FRONT: [Term/Question 1]
+BACK: [Definition/Answer 1]
+---
+FRONT: [Term/Question 2]
+BACK: [Definition/Answer 2]
+---
+...`;
+
+  try {
+    const response = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${process.env.EXPO_PUBLIC_GEMINI_API_KEY}`,
+      {
+        contents: [{ parts: [{ text: prompt }] }],
+      },
+      { headers: { "Content-Type": "application/json" } }
+    );
+
+    if (!response.data.candidates?.[0]?.content?.parts?.[0]?.text) {
+      throw new Error("No response received from Gemini");
+    }
+
+    return response.data.candidates[0].content.parts[0].text;
+  } catch (error) {
+    console.error("Error generating flashcards from notes:", error);
+    throw new Error("Failed to generate flashcards. Please try again later.");
+  }
+};
+
 

@@ -2,20 +2,19 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useEffect, useState } from 'react';
 import {
-  ActionSheetIOS,
-  ActivityIndicator,
-  Alert,
-  Image,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Alert,
+    Image,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { getAnswerFromGemini, processImage } from '../../services/geminiServices';
-import { addHistory, spendCredits } from '../../services/historyStorage';
+import { addHistory, spendCredits, updateHistoryAnswer } from '../../services/historyStorage';
 
 const Index = () => {
   const [modalVisible, setModalVisible] = useState(false);
@@ -24,47 +23,18 @@ const Index = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [extractedText, setExtractedText] = useState<string | null>(null);
+  const [historyId, setHistoryId] = useState<number | null>(null);
 
   useEffect(() => {
     // Initialization is now done in _layout.tsx
   }, []);
-
-  const showImagePickerOptions = () => {
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: ['Cancel', 'Take Photo', 'Choose from Gallery'],
-          cancelButtonIndex: 0,
-        },
-        async (buttonIndex) => {
-          if (buttonIndex === 1) await handleScan();
-          if (buttonIndex === 2) await handleGallery();
-        }
-      );
-    } else {
-      // Android - show custom modal for options
-      Alert.alert(
-        'Select Image',
-        'Choose an option',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Take Photo', onPress: () => handleScan() },
-          { text: 'Choose from Gallery', onPress: () => handleGallery() }
-        ]
-      );
-    }
-  };
 
   const handleScan = async () => {
     setError(null);
     setAnswer(null);
     const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
     if (permissionResult.granted === false) {
-      Alert.alert(
-        'Permission Required',
-        'Camera permission is required to take photos',
-        [{ text: 'OK' }]
-      );
+      Alert.alert('Permission Required', 'Camera permission is required to take photos');
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
@@ -101,6 +71,7 @@ const Index = () => {
     setError(null);
     setAnswer(null);
     setExtractedText(null);
+    setHistoryId(null);
     try {
       const hasEnoughCredits = await spendCredits(1);
       if (!hasEnoughCredits) {
@@ -110,6 +81,8 @@ const Index = () => {
       }
       const text = await processImage(uri);
       setExtractedText(text);
+      const newHistoryId = await addHistory(uri, 'ai-scan', text, '');
+      setHistoryId(newHistoryId);
     } catch (e: any) {
       setError(e.message || 'Something went wrong. Please try again.');
       console.error('Error in scanImageForText:', e);
@@ -119,8 +92,8 @@ const Index = () => {
   };
 
   const getAIAnswer = async () => {
-    if (!extractedText || !imageUri) {
-      setError("Cannot get answer without extracted text and image.");
+    if (!extractedText || !imageUri || !historyId) {
+      setError("Cannot get answer without a successful scan record.");
       return;
     }
     setLoading(true);
@@ -134,7 +107,7 @@ const Index = () => {
       }
       const aiAnswer = await getAnswerFromGemini(extractedText, 'ai-scan');
       setAnswer(aiAnswer);
-      addHistory(imageUri, 'ai-scan', extractedText, aiAnswer);
+      await updateHistoryAnswer(historyId, aiAnswer);
     } catch (e: any) {
       setError(e.message || 'Something went wrong. Please try again.');
       console.error('Error in getAIAnswer:', e);
@@ -150,24 +123,34 @@ const Index = () => {
     setError(null);
     setExtractedText(null);
     setLoading(false);
+    setHistoryId(null);
   };
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerText}>Image AI Scanner</Text>
-        <Text style={styles.subHeader}>Get insights from your images</Text>
+        <Text style={styles.headerTitle}>AI Scan</Text>
+        <Text style={styles.headerSubtitle}>Extract text and get insights from your images.</Text>
       </View>
 
       <View style={styles.content}>
-        <TouchableOpacity 
-          style={styles.scanButton} 
-          onPress={showImagePickerOptions}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="scan" size={24} color="white" style={styles.buttonIcon} />
-          <Text style={styles.scanButtonText}>Scan Image</Text>
-        </TouchableOpacity>
+        <View style={styles.emptyIconContainer}>
+            <Ionicons name="scan-outline" size={80} color="#e0e7ff" />
+        </View>
+        <Text style={styles.emptyTitle}>Ready to Scan</Text>
+        <Text style={styles.emptySubtitle}>
+            Use your camera or select an image from your gallery to get started.
+        </Text>
+        <View style={styles.buttonContainer}>
+            <TouchableOpacity style={styles.scanButton} onPress={handleScan} activeOpacity={0.8}>
+                <Ionicons name="camera-outline" size={20} color="#fff" />
+                <Text style={styles.scanButtonText}>Take Photo</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.galleryButton} onPress={handleGallery} activeOpacity={0.8}>
+                <Ionicons name="images-outline" size={20} color="#6366f1" />
+                <Text style={styles.galleryButtonText}>From Gallery</Text>
+            </TouchableOpacity>
+        </View>
       </View>
 
       <Modal 
@@ -177,71 +160,78 @@ const Index = () => {
         onRequestClose={closeModal}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <TouchableOpacity 
-              style={styles.closeIcon} 
-              onPress={closeModal}
-              hitSlop={{top: 20, bottom: 20, left: 20, right: 20}}
-            >
-              <Ionicons name="close" size={24} color="#6b7280" />
-            </TouchableOpacity>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Scan Result</Text>
+                <TouchableOpacity onPress={closeModal} style={styles.closeIcon}>
+                    <Ionicons name="close" size={24} color="#6b7280" />
+                </TouchableOpacity>
+            </View>
 
-            {imageUri && (
-              <Image 
-                source={{ uri: imageUri }} 
-                style={styles.image} 
-                resizeMode="contain" 
-              />
-            )}
+            <ScrollView style={styles.modalContent}>
+                {imageUri && (
+                <Image 
+                    source={{ uri: imageUri }} 
+                    style={styles.image} 
+                    resizeMode="contain" 
+                />
+                )}
 
-            {loading ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#6366f1" />
-                <Text style={styles.loadingText}>Processing your image...</Text>
-              </View>
-            ) : (
-              <>
+                {loading && (
+                    <View style={styles.loadingContainer}>
+                        <ActivityIndicator size="large" color="#6366f1" />
+                        <Text style={styles.loadingText}>Processing your image...</Text>
+                    </View>
+                )}
+                
                 {error && (
-                  <View style={styles.errorBox}>
-                    <Ionicons name="warning" size={20} color="#ef4444" />
-                    <Text style={styles.errorText}>{error}</Text>
-                  </View>
+                    <View style={styles.errorBox}>
+                        <Ionicons name="warning-outline" size={20} color="#ef4444" />
+                        <Text style={styles.errorText}>{error}</Text>
+                    </View>
                 )}
 
                 {extractedText && (
-                  <View style={styles.textBox}>
+                  <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Extracted Text</Text>
-                    <ScrollView style={styles.textScrollView}>
-                      <Text style={styles.extractedText}>{extractedText}</Text>
-                    </ScrollView>
+                    <View style={styles.textBox}>
+                      <ScrollView style={styles.textScrollView}>
+                        <Text style={styles.extractedText}>{extractedText}</Text>
+                      </ScrollView>
+                    </View>
                   </View>
                 )}
 
+                {answer && (
+                    <View style={styles.section}>
+                        <Text style={styles.sectionTitle}>AI Analysis</Text>
+                        <View style={styles.answerBox}>
+                          <ScrollView style={styles.answerScrollView}>
+                            <Text style={styles.answerText}>{answer}</Text>
+                          </ScrollView>
+                        </View>
+                    </View>
+                )}
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
                 {extractedText && !answer && !loading && (
                   <TouchableOpacity style={styles.getAnswerButton} onPress={getAIAnswer}>
-                    <Ionicons name="sparkles-outline" size={20} color="white" style={{ marginRight: 8}}/>
+                    <Ionicons name="sparkles-outline" size={20} color="white"/>
                     <Text style={styles.getAnswerButtonText}>Get AI Answer (1 Credit)</Text>
                   </TouchableOpacity>
                 )}
 
-                {answer && (
-                  <View style={styles.answerBox}>
-                    <Text style={styles.sectionTitle}>AI Analysis</Text>
-                    <ScrollView style={styles.answerScrollView}>
-                      <Text style={styles.answerText}>{answer}</Text>
-                    </ScrollView>
-                  </View>
+                {(answer || error) && (
+                    <TouchableOpacity 
+                        style={styles.closeButton} 
+                        onPress={closeModal}
+                        disabled={loading}
+                    >
+                        <Text style={styles.closeButtonText}>Done</Text>
+                    </TouchableOpacity>
                 )}
-              </>
-            )}
-
-            <TouchableOpacity 
-              style={styles.closeButton} 
-              onPress={closeModal}
-              disabled={loading}
-            >
-              <Text style={styles.closeButtonText}>Done</Text>
-            </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -255,68 +245,132 @@ const styles = StyleSheet.create({
     backgroundColor: '#f9fafb' 
   },
   header: {
-    paddingTop: 60,
-    paddingBottom: 40,
+    backgroundColor: '#fff',
+    paddingTop: Platform.OS === 'ios' ? 60 : 50,
+    paddingBottom: 24,
     paddingHorizontal: 24,
-    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6'
   },
-  headerText: {
+  headerTitle: {
     fontSize: 28,
     fontWeight: '700',
     color: '#111827',
-    marginBottom: 8,
+    textAlign: 'center',
+    marginBottom: 4,
   },
-  subHeader: {
+  headerSubtitle: {
     fontSize: 16,
     color: '#6b7280',
+    textAlign: 'center',
   },
   content: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 24,
+    padding: 40,
+  },
+  emptyIconContainer: {
+    marginBottom: 24,
+    backgroundColor: '#eef2ff',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontSize: 16,
+    color: '#6b7280',
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 32,
+    maxWidth: 300,
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    gap: 16,
   },
   scanButton: {
     backgroundColor: '#6366f1',
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 12,
     shadowColor: '#6366f1',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 5,
   },
-  buttonIcon: {
-    marginRight: 12,
-  },
   scanButtonText: { 
     color: '#fff', 
-    fontSize: 18, 
-    fontWeight: '600' 
+    fontSize: 16, 
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  galleryButton: {
+    backgroundColor: '#eef2ff',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#c7d2fe'
+  },
+  galleryButtonText: {
+    color: '#4338ca', 
+    fontSize: 16, 
+    fontWeight: '600',
+    marginLeft: 8,
   },
   modalOverlay: { 
     flex: 1, 
     backgroundColor: 'rgba(0,0,0,0.5)', 
     justifyContent: 'center', 
-    alignItems: 'center' 
+    alignItems: 'center',
+    padding: 20,
   },
-  modalContent: { 
+  modalContainer: { 
     backgroundColor: '#fff', 
     borderRadius: 16, 
-    padding: 24, 
-    width: '90%', 
-    maxHeight: '80%',
-    position: 'relative',
+    width: '100%', 
+    maxHeight: '90%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#111827',
   },
   closeIcon: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    zIndex: 10,
+    padding: 4,
+  },
+  modalContent: {
+    padding: 20,
   },
   image: { 
     width: '100%', 
@@ -327,7 +381,8 @@ const styles = StyleSheet.create({
   },
   loadingContainer: {
     alignItems: 'center',
-    paddingVertical: 24,
+    justifyContent: 'center',
+    paddingVertical: 48,
   },
   loadingText: {
     marginTop: 16,
@@ -344,31 +399,33 @@ const styles = StyleSheet.create({
   },
   errorText: { 
     color: '#b91c1c', 
-    marginLeft: 8,
+    marginLeft: 12,
     fontSize: 15, 
     flex: 1,
+  },
+  section: {
+    marginBottom: 20,
   },
   sectionTitle: {
     fontWeight: '600',
     color: '#111827',
-    marginBottom: 8,
+    marginBottom: 12,
     fontSize: 16,
   },
   textBox: {
-    marginBottom: 16,
     width: '100%',
   },
   answerBox: {
     width: '100%',
   },
   textScrollView: {
-    maxHeight: 100,
+    maxHeight: 120,
     backgroundColor: '#f3f4f6',
     borderRadius: 8,
     padding: 12,
   },
   answerScrollView: {
-    maxHeight: 150,
+    maxHeight: 200,
     backgroundColor: '#f3f4f6',
     borderRadius: 8,
     padding: 12,
@@ -376,14 +433,19 @@ const styles = StyleSheet.create({
   extractedText: {
     color: '#374151',
     fontSize: 14,
+    lineHeight: 20,
   },
   answerText: { 
     color: '#374151', 
     fontSize: 15,
     lineHeight: 22,
   },
-  closeButton: { 
-    marginTop: 24, 
+  modalFooter: {
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#f3f4f6',
+  },
+  closeButton: {
     backgroundColor: '#6366f1', 
     borderRadius: 12, 
     paddingVertical: 14,
@@ -402,8 +464,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 14,
     borderRadius: 12,
-    marginTop: 8,
-    marginBottom: 16,
     shadowColor: '#22c55e',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -414,6 +474,7 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: '600',
+    marginLeft: 8,
   },
 });
 

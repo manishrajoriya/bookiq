@@ -17,6 +17,7 @@ export const initDatabase = async () => {
     await initNotesTable();
     await initScanNotesTable();
     await initQuizTable();
+    await initFlashCardSetTable();
     await migrateDatabase();
     console.log("DATABASE: All tables initialized.");
 };
@@ -374,100 +375,151 @@ export const resetDatabase = async () => {
 
 export const resetQuizTable = async () => {
   const localDb = await getDb();
-  try {
-    console.log("DATABASE: Resetting quiz_maker table...");
-    await localDb.execAsync("DROP TABLE IF EXISTS quiz_maker;");
-    await initQuizTable();
-    console.log("DATABASE: Quiz table reset completed successfully.");
-  } catch (error) {
-    console.error("DATABASE: Quiz table reset error:", error);
-  }
+  console.log("DATABASE: Resetting quiz table...");
+  await localDb.execAsync('DROP TABLE IF EXISTS quizzes;');
+  await initQuizTable();
+  console.log("DATABASE: Quiz table reset.");
+};
+
+export const resetFlashCardSetTable = async () => {
+    const localDb = await getDb();
+    console.log("DATABASE: Resetting flash card sets table...");
+    await localDb.execAsync('DROP TABLE IF EXISTS flash_card_sets;');
+    await initFlashCardSetTable();
+    console.log("DATABASE: Flash card sets table reset.");
 };
 
 export const migrateDatabase = async () => {
-  const localDb = await getDb();
-  try {
-    // Check if quiz_maker table exists
-    const tables = await localDb.getAllAsync("SELECT name FROM sqlite_master WHERE type='table' AND name='quiz_maker';");
-    
-    if (tables.length === 0) {
-      console.log("DATABASE: quiz_maker table doesn't exist, creating it...");
-      await initQuizTable();
-      return;
-    }
-    
-    // Check table schema and add missing columns
-    const tableInfo = await localDb.getAllAsync("PRAGMA table_info(quiz_maker);");
-    const existingColumns = tableInfo.map((column: any) => column.name);
-    
-    console.log("DATABASE: Existing columns in quiz_maker:", existingColumns);
-    
-    // Define required columns
-    const requiredColumns = [
-      { name: 'id', type: 'INTEGER PRIMARY KEY AUTOINCREMENT' },
-      { name: 'title', type: 'TEXT' },
-      { name: 'content', type: 'TEXT' },
-      { name: 'quiz_type', type: 'TEXT' },
-      { name: 'number_of_questions', type: 'INTEGER' },
-      { name: 'source_note_id', type: 'INTEGER' },
-      { name: 'source_note_type', type: 'TEXT' },
-      { name: 'createdAt', type: 'TEXT' }
-    ];
-    
-    // Add missing columns
-    for (const requiredColumn of requiredColumns) {
-      if (!existingColumns.includes(requiredColumn.name)) {
-        console.log(`DATABASE: Adding missing column: ${requiredColumn.name}`);
-        try {
-          await localDb.execAsync(`ALTER TABLE quiz_maker ADD COLUMN ${requiredColumn.name} ${requiredColumn.type};`);
-        } catch (alterError) {
-          console.log(`DATABASE: Could not add column ${requiredColumn.name}, it might already exist or be a primary key`);
+    console.log("DATABASE: Checking for migrations...");
+    const localDb = await getDb();
+    try {
+      // Check if quiz_maker table exists
+      const tables = await localDb.getAllAsync("SELECT name FROM sqlite_master WHERE type='table' AND name='quiz_maker';");
+      
+      if (tables.length === 0) {
+        console.log("DATABASE: quiz_maker table doesn't exist, creating it...");
+        await initQuizTable();
+        return;
+      }
+      
+      // Check table schema and add missing columns
+      const tableInfo = await localDb.getAllAsync("PRAGMA table_info(quiz_maker);");
+      const existingColumns = tableInfo.map((column: any) => column.name);
+      
+      console.log("DATABASE: Existing columns in quiz_maker:", existingColumns);
+      
+      // Define required columns
+      const requiredColumns = [
+        { name: 'id', type: 'INTEGER PRIMARY KEY AUTOINCREMENT' },
+        { name: 'title', type: 'TEXT' },
+        { name: 'content', type: 'TEXT' },
+        { name: 'quiz_type', type: 'TEXT' },
+        { name: 'number_of_questions', type: 'INTEGER' },
+        { name: 'source_note_id', type: 'INTEGER' },
+        { name: 'source_note_type', type: 'TEXT' },
+        { name: 'createdAt', type: 'TEXT' }
+      ];
+      
+      // Add missing columns
+      for (const requiredColumn of requiredColumns) {
+        if (!existingColumns.includes(requiredColumn.name)) {
+          console.log(`DATABASE: Adding missing column: ${requiredColumn.name}`);
+          try {
+            await localDb.execAsync(`ALTER TABLE quiz_maker ADD COLUMN ${requiredColumn.name} ${requiredColumn.type};`);
+          } catch (alterError) {
+            console.log(`DATABASE: Could not add column ${requiredColumn.name}, it might already exist or be a primary key`);
+          }
         }
       }
+      
+      // Update existing records with default values for new columns
+      const existingQuizzes = await localDb.getAllAsync("SELECT * FROM quiz_maker;");
+      for (const quiz of existingQuizzes as any[]) {
+        const updates = [];
+        const values = [];
+        
+        if (!quiz.content) {
+          updates.push("content = ?");
+          values.push(quiz.title || '');
+        }
+        
+        if (!quiz.quiz_type) {
+          updates.push("quiz_type = ?");
+          values.push('multiple-choice');
+        }
+        
+        if (!quiz.number_of_questions) {
+          updates.push("number_of_questions = ?");
+          values.push(5);
+        }
+        
+        if (!quiz.createdAt) {
+          updates.push("createdAt = ?");
+          values.push(new Date().toISOString());
+        }
+        
+        if (updates.length > 0) {
+          values.push(quiz.id);
+          await localDb.runAsync(`UPDATE quiz_maker SET ${updates.join(', ')} WHERE id = ?;`, values);
+        }
+      }
+      
+      console.log("DATABASE: Migration completed successfully.");
+    } catch (error) {
+      console.error("DATABASE: Migration error:", error);
+      // If migration fails, try to recreate the table
+      try {
+        console.log("DATABASE: Attempting to recreate quiz_maker table...");
+        await localDb.execAsync("DROP TABLE IF EXISTS quiz_maker;");
+        await initQuizTable();
+      } catch (recreateError) {
+        console.error("DATABASE: Failed to recreate quiz_maker table:", recreateError);
+      }
     }
-    
-    // Update existing records with default values for new columns
-    const existingQuizzes = await localDb.getAllAsync("SELECT * FROM quiz_maker;");
-    for (const quiz of existingQuizzes as any[]) {
-      const updates = [];
-      const values = [];
-      
-      if (!quiz.content) {
-        updates.push("content = ?");
-        values.push(quiz.title || '');
-      }
-      
-      if (!quiz.quiz_type) {
-        updates.push("quiz_type = ?");
-        values.push('multiple-choice');
-      }
-      
-      if (!quiz.number_of_questions) {
-        updates.push("number_of_questions = ?");
-        values.push(5);
-      }
-      
-      if (!quiz.createdAt) {
-        updates.push("createdAt = ?");
-        values.push(new Date().toISOString());
-      }
-      
-      if (updates.length > 0) {
-        values.push(quiz.id);
-        await localDb.runAsync(`UPDATE quiz_maker SET ${updates.join(', ')} WHERE id = ?;`, values);
-      }
-    }
-    
-    console.log("DATABASE: Migration completed successfully.");
-  } catch (error) {
-    console.error("DATABASE: Migration error:", error);
-    // If migration fails, try to recreate the table
+  };
+
+// --- Flash Card Sets ---
+export interface FlashCardSet {
+    id: number;
+    title: string;
+    content: string;
+    card_type: string;
+    number_of_cards: number;
+    source_note_id?: number;
+    source_note_type?: string;
+    createdAt: string;
+}
+
+export const initFlashCardSetTable = async () => {
+    const localDb = await getDb();
+    await localDb.execAsync(
+      "CREATE TABLE IF NOT EXISTS flash_card_sets (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, content TEXT, card_type TEXT, number_of_cards INTEGER, source_note_id INTEGER, source_note_type TEXT, createdAt TEXT);"
+    );
+};
+
+export const addFlashCardSet = async (
+  title: string, 
+  content: string,
+  cardType: string,
+  numberOfCards: number,
+  sourceNoteId?: number,
+  sourceNoteType?: 'note' | 'scan-note'
+): Promise<number> => {
+    const localDb = await getDb();
+    const result = await localDb.runAsync(
+      "INSERT INTO flash_card_sets (title, content, card_type, number_of_cards, source_note_id, source_note_type, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?);",
+      [title, content, cardType, numberOfCards, sourceNoteId ?? null, sourceNoteType ?? null, new Date().toISOString()]
+    );
+    return result.lastInsertRowId;
+};
+
+export const getAllFlashCardSets = async (): Promise<FlashCardSet[]> => {
+    const localDb = await getDb();
     try {
-      console.log("DATABASE: Attempting to recreate quiz_maker table...");
-      await localDb.execAsync("DROP TABLE IF EXISTS quiz_maker;");
-      await initQuizTable();
-    } catch (recreateError) {
-      console.error("DATABASE: Failed to recreate quiz_maker table:", recreateError);
+      const result = await localDb.getAllAsync("SELECT * FROM flash_card_sets ORDER BY createdAt DESC;");
+      return (result as FlashCardSet[]) ?? [];
+    } catch (error) {
+      console.warn("Could not get flash card sets.", error);
+      return [];
     }
-  }
 }; 
