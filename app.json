@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "bookiq",
+    "name": "BookIQ",
     "slug": "bookiq",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -45,6 +45,12 @@
       "eas": {
         "projectId": "537537da-f424-4260-96b1-e92f44eeed1a"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/537537da-f424-4260-96b1-e92f44eeed1a"
     }
   }
 }
