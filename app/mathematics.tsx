@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
+import { useRouter } from 'expo-router';
 import React, { useCallback, useRef, useState } from 'react';
 import {
     ActionSheetIOS,
@@ -60,6 +61,7 @@ interface ImageScanResult {
 }
 
 const StudyNotes = () => {
+  const router = useRouter();
   // State management
   const [notes, setNotes] = useState<ScanNote[]>([]);
   const [loading, setLoading] = useState(true);
@@ -235,10 +237,16 @@ const StudyNotes = () => {
       // Check credits first
       const hasEnoughCredits = await spendCredits(1);
       if (!hasEnoughCredits) {
-        return {
-          success: false,
-          error: 'Insufficient credits. Please purchase more credits to continue scanning.'
-        };
+        Alert.alert(
+          "Out of Credits",
+          "You need at least 1 credit to scan an image.",
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Get Credits", onPress: () => router.push('/paywall') }
+          ]
+        );
+        setScanState(prev => ({ ...prev, isProcessing: false, progress: 0 }));
+        return { success: false, error: 'Insufficient credits' };
       }
 
       setScanState(prev => ({ ...prev, progress: 30 }));

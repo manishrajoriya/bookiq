@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
     ActivityIndicator,
+    Alert,
     Dimensions,
     Image,
     Modal,
@@ -150,7 +151,14 @@ const Explore = () => {
             setLoadingMessage('Scanning image... (1 credit)');
             const hasEnoughCredits = await spendCredits(1);
             if (!hasEnoughCredits) {
-                setError("Not enough credits to scan image. You need at least 1 credit.");
+                Alert.alert(
+                    "Out of Credits",
+                    "You need at least 1 credit to scan an image.",
+                    [
+                        { text: "Cancel", style: "cancel" },
+                        { text: "Get Credits", onPress: () => router.push('/paywall') }
+                    ]
+                );
                 setIsLoading(false);
                 return;
             }
@@ -191,7 +199,14 @@ const Explore = () => {
             setLoadingMessage('Generating answer... (1 credit)');
             const hasEnoughCredits = await spendCredits(1);
             if (!hasEnoughCredits) {
-                setError("Not enough credits for an answer. You need 1 more credit.");
+                Alert.alert(
+                    "Out of Credits",
+                    "You need at least 1 credit to get an answer.",
+                    [
+                        { text: "Cancel", style: "cancel" },
+                        { text: "Get Credits", onPress: () => router.push('/paywall') }
+                    ]
+                );
                 setIsLoading(false);
                 return;
             }

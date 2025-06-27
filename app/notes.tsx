@@ -104,7 +104,15 @@ export default function NotesScreen() {
 
             const hasEnoughCredits = await spendCredits(2);
             if (!hasEnoughCredits) {
-                Alert.alert('Insufficient Credits', 'You need 2 credits to generate a quiz.');
+                Alert.alert(
+                    "Out of Credits",
+                    "You need at least 2 credits to generate a quiz.",
+                    [
+                        { text: "Cancel", style: "cancel" },
+                        { text: "Get Credits", onPress: () => router.push('/paywall') }
+                    ]
+                );
+                setIsGenerating(false);
                 return;
             }
 

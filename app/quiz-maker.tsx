@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
+import { useRouter } from 'expo-router';
 import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -32,7 +33,6 @@ interface Quiz {
   title: string;
   content: string;
   quiz_type: string;
-  number_of_questions: number;
   source_note_id?: number;
   source_note_type?: string;
   createdAt: string;
@@ -49,9 +49,36 @@ interface ErrorState {
   retryable: boolean;
 }
 
+interface PracticeQuestion {
+  question: string;
+  options: string[];
+  correctAnswer: number;
+  questionType: 'multiple-choice' | 'true-false';
+}
+
+interface PracticeState {
+  questions: PracticeQuestion[];
+  currentQuestionIndex: number;
+  userAnswers: number[];
+  showAnswers: boolean;
+  score: number;
+  isComplete: boolean;
+  mode: 'per-question' | 'all-at-once';
+  checked: boolean; // for all-at-once mode
+}
+
 type QuizType = 'multiple-choice' | 'true-false' | 'fill-blank';
 
+interface QuizQuestion {
+  id: string;
+  question: string;
+  questionType: 'multiple-choice' | 'true-false';
+  options: string[];
+  correctAnswer: number;
+}
+
 const QuizMaker = () => {
+  const router = useRouter();
   // State management
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,7 +89,6 @@ const QuizMaker = () => {
   const [quizModalVisible, setQuizModalVisible] = useState(false);
   const [generatedQuiz, setGeneratedQuiz] = useState<string>('');
   const [selectedQuizType, setSelectedQuizType] = useState<QuizType>('multiple-choice');
-  const [numberOfQuestions, setNumberOfQuestions] = useState<number>(5);
   const [quizState, setQuizState] = useState<QuizState>({
     isGenerating: false,
     progress: 0
@@ -77,10 +103,23 @@ const QuizMaker = () => {
   // Manual quiz creation state
   const [manualQuizModalVisible, setManualQuizModalVisible] = useState(false);
   const [manualQuizTitle, setManualQuizTitle] = useState('');
-  const [manualQuizContent, setManualQuizContent] = useState('');
+  const [manualQuizQuestions, setManualQuizQuestions] = useState<QuizQuestion[]>([]);
   const [manualQuizType, setManualQuizType] = useState<QuizType>('multiple-choice');
-  const [manualQuizQuestions, setManualQuizQuestions] = useState<number>(5);
   const [isSavingManualQuiz, setIsSavingManualQuiz] = useState(false);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  
+  // Practice mode state
+  const [practiceModalVisible, setPracticeModalVisible] = useState(false);
+  const [practiceState, setPracticeState] = useState<PracticeState>({
+    questions: [],
+    currentQuestionIndex: 0,
+    userAnswers: [],
+    showAnswers: false,
+    score: 0,
+    isComplete: false,
+    mode: 'per-question',
+    checked: false,
+  });
   
   // Error handling
   const [error, setError] = useState<ErrorState>({
@@ -93,6 +132,8 @@ const QuizMaker = () => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const scrollY = useRef(new Animated.Value(0)).current;
+
+  const [practiceModeSelectVisible, setPracticeModeSelectVisible] = useState(false);
 
   // Enhanced error handling
   const handleError = (type: ErrorState['type'], message: string, retryable: boolean = true) => {
@@ -221,7 +262,14 @@ const QuizMaker = () => {
     try {
       const hasEnoughCredits = await spendCredits(1);
       if (!hasEnoughCredits) {
-        handleError('credits', 'Insufficient credits. You need 1 credit to scan and 2 credits to generate quiz.', false);
+        Alert.alert(
+          "Out of Credits",
+          "You need at least 1 credit to scan an image.",
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Get Credits", onPress: () => router.push('/paywall') }
+          ]
+        );
         return;
       }
 
@@ -248,7 +296,14 @@ const QuizMaker = () => {
 
       const hasEnoughCredits = await spendCredits(2);
       if (!hasEnoughCredits) {
-        handleError('credits', 'You need 2 credits to generate a quiz. Please purchase more credits.', false);
+        Alert.alert(
+          "Out of Credits",
+          "You need at least 2 credits to generate a quiz.",
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Get Credits", onPress: () => router.push('/paywall') }
+          ]
+        );
         return;
       }
 
@@ -256,8 +311,7 @@ const QuizMaker = () => {
 
       const quiz = await generateQuizFromNotes(
         selectedQuiz.content,
-        selectedQuizType,
-        numberOfQuestions
+        selectedQuizType
       );
 
       setQuizState(prev => ({ ...prev, progress: 80 }));
@@ -286,7 +340,7 @@ const QuizMaker = () => {
         quizTitle,
         generatedQuiz,
         selectedQuizType,
-        numberOfQuestions,
+        0, // We'll calculate the actual number when parsing
         selectedQuiz.id,
         selectedQuiz.source_note_type as 'note' | 'scan-note'
       );
@@ -316,7 +370,14 @@ const QuizMaker = () => {
 
       const hasEnoughCredits = await spendCredits(2);
       if (!hasEnoughCredits) {
-        handleError('credits', 'You need 2 credits to generate a quiz. Please purchase more credits.', false);
+        Alert.alert(
+          "Out of Credits",
+          "You need at least 2 credits to generate a quiz.",
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Get Credits", onPress: () => router.push('/paywall') }
+          ]
+        );
         return;
       }
 
@@ -324,8 +385,7 @@ const QuizMaker = () => {
 
       const quiz = await generateQuizFromNotes(
         extractedText,
-        selectedQuizType,
-        numberOfQuestions
+        selectedQuizType
       );
 
       setQuizState(prev => ({ ...prev, progress: 80 }));
@@ -354,7 +414,7 @@ const QuizMaker = () => {
         quizTitle,
         generatedQuiz,
         selectedQuizType,
-        numberOfQuestions
+        0 // We'll calculate the actual number when parsing
       );
 
       // Refresh the quiz list
@@ -375,9 +435,15 @@ const QuizMaker = () => {
 
   const openManualQuizModal = () => {
     setManualQuizTitle('');
-    setManualQuizContent('');
+    setManualQuizQuestions([{
+      id: '1',
+      question: '',
+      questionType: 'multiple-choice',
+      options: ['', '', '', ''],
+      correctAnswer: 0
+    }]);
     setManualQuizType('multiple-choice');
-    setManualQuizQuestions(5);
+    setCurrentQuestionIndex(0);
     setManualQuizModalVisible(true);
   };
 
@@ -392,25 +458,137 @@ const QuizMaker = () => {
     }
     setManualQuizModalVisible(false);
     setManualQuizTitle('');
-    setManualQuizContent('');
+    setManualQuizQuestions([]);
     setManualQuizType('multiple-choice');
-    setManualQuizQuestions(5);
+    setCurrentQuestionIndex(0);
+  };
+
+  const addQuestion = () => {
+    const newQuestion: QuizQuestion = {
+      id: Date.now().toString(),
+      question: '',
+      questionType: 'multiple-choice',
+      options: ['', '', '', ''],
+      correctAnswer: 0
+    };
+    setManualQuizQuestions([...manualQuizQuestions, newQuestion]);
+    setCurrentQuestionIndex(manualQuizQuestions.length);
+  };
+
+  const removeQuestion = (index: number) => {
+    if (manualQuizQuestions.length <= 1) {
+      Alert.alert('Error', 'You must have at least one question.');
+      return;
+    }
+    const updatedQuestions = manualQuizQuestions.filter((_, i) => i !== index);
+    setManualQuizQuestions(updatedQuestions);
+    if (currentQuestionIndex >= updatedQuestions.length) {
+      setCurrentQuestionIndex(updatedQuestions.length - 1);
+    }
+  };
+
+  const updateQuestion = (index: number, field: keyof QuizQuestion, value: any) => {
+    const updatedQuestions = [...manualQuizQuestions];
+    if (field === 'options') {
+      updatedQuestions[index] = { ...updatedQuestions[index], options: value };
+    } else {
+      updatedQuestions[index] = { ...updatedQuestions[index], [field]: value };
+    }
+    setManualQuizQuestions(updatedQuestions);
+  };
+
+  const updateOption = (questionIndex: number, optionIndex: number, value: string) => {
+    const updatedQuestions = [...manualQuizQuestions];
+    updatedQuestions[questionIndex].options[optionIndex] = value;
+    setManualQuizQuestions(updatedQuestions);
+  };
+
+  const setCorrectAnswer = (questionIndex: number, optionIndex: number) => {
+    const updatedQuestions = [...manualQuizQuestions];
+    updatedQuestions[questionIndex].correctAnswer = optionIndex;
+    setManualQuizQuestions(updatedQuestions);
+  };
+
+  const updateQuestionType = (questionIndex: number, type: 'multiple-choice' | 'true-false') => {
+    const updatedQuestions = [...manualQuizQuestions];
+    updatedQuestions[questionIndex].questionType = type;
+    
+    // Reset options based on question type
+    if (type === 'true-false') {
+      updatedQuestions[questionIndex].options = ['True', 'False'];
+      updatedQuestions[questionIndex].correctAnswer = 0; // Default to True
+    } else {
+      updatedQuestions[questionIndex].options = ['', '', '', ''];
+      updatedQuestions[questionIndex].correctAnswer = 0;
+    }
+    
+    setManualQuizQuestions(updatedQuestions);
   };
 
   const saveManualQuiz = async () => {
-    if (!manualQuizTitle.trim() || !manualQuizContent.trim()) {
-      Alert.alert('Error', 'Please fill in both title and content for the quiz.');
+    if (!manualQuizTitle.trim()) {
+      Alert.alert('Error', 'Please enter a quiz title.');
       return;
+    }
+
+    // Validate all questions
+    for (let i = 0; i < manualQuizQuestions.length; i++) {
+      const question = manualQuizQuestions[i];
+      if (!question.question.trim()) {
+        Alert.alert('Error', `Please enter a question for question ${i + 1}.`);
+        return;
+      }
+      
+      if (question.questionType === 'multiple-choice') {
+        const validOptions = question.options.filter(option => option.trim() !== '');
+        if (validOptions.length < 2) {
+          Alert.alert('Error', `Question ${i + 1} must have at least 2 answer options.`);
+          return;
+        }
+      }
     }
 
     try {
       setIsSavingManualQuiz(true);
       
+      // Format quiz content
+      let quizContent = '';
+      manualQuizQuestions.forEach((q, index) => {
+        quizContent += `${index + 1}. ${q.question}\n`;
+        
+        if (q.questionType === 'true-false') {
+          quizContent += `   A) True\n`;
+          quizContent += `   B) False\n`;
+          quizContent += `   (Correct Answer: ${q.correctAnswer === 0 ? 'A) True' : 'B) False'})\n`;
+        } else {
+          q.options.forEach((option, optIndex) => {
+            if (option.trim()) {
+              const letter = String.fromCharCode(65 + optIndex); // A, B, C, D
+              const isCorrect = optIndex === q.correctAnswer;
+              quizContent += `   ${letter}) ${option}${isCorrect ? ' ✓' : ''}\n`;
+            }
+          });
+        }
+        quizContent += '\n';
+      });
+      
+      quizContent += 'ANSWERS:\n';
+      manualQuizQuestions.forEach((q, index) => {
+        if (q.questionType === 'true-false') {
+          const correctLetter = q.correctAnswer === 0 ? 'A' : 'B';
+          const correctAnswer = q.correctAnswer === 0 ? 'True' : 'False';
+          quizContent += `${index + 1}. ${correctLetter}) ${correctAnswer}\n`;
+        } else {
+          const correctLetter = String.fromCharCode(65 + q.correctAnswer);
+          quizContent += `${index + 1}. ${correctLetter}) ${q.options[q.correctAnswer]}\n`;
+        }
+      });
+
       await addQuiz(
         manualQuizTitle.trim(),
-        manualQuizContent.trim(),
-        manualQuizType,
-        manualQuizQuestions
+        quizContent,
+        'mixed', // Use 'mixed' for quizzes with different question types
+        manualQuizQuestions.length
       );
 
       // Refresh the quiz list
@@ -430,8 +608,6 @@ const QuizMaker = () => {
       setIsSavingManualQuiz(false);
     }
   };
-
- 
 
   const openNotePreview = (quiz: Quiz) => {
     setSelectedQuiz(quiz);
@@ -482,6 +658,155 @@ const QuizMaker = () => {
     }
   };
 
+  const parseQuizContent = (content: string): PracticeQuestion[] => {
+    const questions: PracticeQuestion[] = [];
+    const lines = content.split('\n');
+    let currentQuestion: PracticeQuestion | null = null;
+    
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      
+      // Check if it's a question (starts with number and dot)
+      if (/^\d+\./.test(trimmedLine)) {
+        if (currentQuestion) {
+          questions.push(currentQuestion);
+        }
+        
+        const questionText = trimmedLine.replace(/^\d+\.\s*/, '');
+        currentQuestion = {
+          question: questionText,
+          options: [],
+          correctAnswer: 0,
+          questionType: 'multiple-choice'
+        };
+      }
+      // Check if it's an option (starts with letter and parenthesis)
+      else if (currentQuestion && /^[A-D]\)/.test(trimmedLine)) {
+        const optionText = trimmedLine.replace(/^[A-D]\)\s*/, '');
+        const optionIndex = trimmedLine.charCodeAt(0) - 65; // A=0, B=1, etc.
+        
+        currentQuestion.options[optionIndex] = optionText;
+        
+        // Check if it's marked as correct (has ✓)
+        if (optionText.includes('✓')) {
+          currentQuestion.correctAnswer = optionIndex;
+          currentQuestion.options[optionIndex] = optionText.replace(' ✓', '');
+        }
+        
+        // Determine if it's true/false based on options
+        if (currentQuestion.options.length >= 2 && 
+            currentQuestion.options[0] === 'True' && 
+            currentQuestion.options[1] === 'False') {
+          currentQuestion.questionType = 'true-false';
+        }
+      }
+    }
+    
+    if (currentQuestion) {
+      questions.push(currentQuestion);
+    }
+    
+    return questions;
+  };
+
+  const startPractice = (quiz: Quiz, mode: 'per-question' | 'all-at-once' = 'per-question') => {
+    const questions = parseQuizContent(quiz.content);
+    setPracticeState({
+      questions,
+      currentQuestionIndex: 0,
+      userAnswers: new Array(questions.length).fill(-1),
+      showAnswers: false,
+      score: 0,
+      isComplete: false,
+      mode,
+      checked: false,
+    });
+    setSelectedQuiz(quiz);
+    setPracticeModalVisible(true);
+  };
+
+  const selectAnswer = (answerIndex: number) => {
+    setPracticeState(prev => ({
+      ...prev,
+      userAnswers: prev.userAnswers.map((answer, index) => 
+        index === prev.currentQuestionIndex ? answerIndex : answer
+      )
+    }));
+  };
+
+  const nextQuestion = () => {
+    setPracticeState(prev => {
+      if (prev.currentQuestionIndex < prev.questions.length - 1) {
+        return {
+          ...prev,
+          currentQuestionIndex: prev.currentQuestionIndex + 1
+        };
+      } else if (prev.mode === 'per-question') {
+        // Calculate final score
+        const score = prev.userAnswers.reduce((total, answer, index) => {
+          return total + (answer === prev.questions[index].correctAnswer ? 1 : 0);
+        }, 0);
+        return {
+          ...prev,
+          isComplete: true,
+          score
+        };
+      } else {
+        // all-at-once mode: just finish questions, don't show answers yet
+        return {
+          ...prev,
+          isComplete: true
+        };
+      }
+    });
+  };
+
+  const previousQuestion = () => {
+    setPracticeState(prev => ({
+      ...prev,
+      currentQuestionIndex: Math.max(0, prev.currentQuestionIndex - 1)
+    }));
+  };
+
+  const showAnswer = () => {
+    setPracticeState(prev => ({
+      ...prev,
+      showAnswers: true,
+      checked: true,
+      // For all-at-once mode, calculate score now
+      score: prev.mode === 'all-at-once' ? prev.userAnswers.reduce((total, answer, index) => {
+        return total + (answer === prev.questions[index].correctAnswer ? 1 : 0);
+      }, 0) : prev.score
+    }));
+  };
+
+  const hideAnswer = () => {
+    setPracticeState(prev => ({
+      ...prev,
+      showAnswers: false
+    }));
+  };
+
+  const restartPractice = () => {
+    if (!selectedQuiz) return;
+    startPractice(selectedQuiz);
+  };
+
+  const closePracticeModal = () => {
+    setPracticeModalVisible(false);
+    setPracticeState({
+      questions: [],
+      currentQuestionIndex: 0,
+      userAnswers: [],
+      showAnswers: false,
+      score: 0,
+      isComplete: false,
+      mode: 'per-question',
+      checked: false,
+    });
+    setSelectedQuiz(null);
+  };
+
   const renderNoteItem = ({ item, index }: { item: Quiz; index: number }) => (
     <View style={styles.noteCardContainer}>
       <TouchableOpacity 
@@ -512,6 +837,12 @@ const QuizMaker = () => {
               {item.createdAt}
             </Text>
             <View style={styles.noteActions}>
+              <TouchableOpacity 
+                style={styles.practiceButton}
+                onPress={() => { setSelectedQuiz(item); setPracticeModeSelectVisible(true); }}
+              >
+                <Ionicons name="play-outline" size={16} color="#10b981" />
+              </TouchableOpacity>
               <TouchableOpacity 
                 style={styles.quizButton}
                 onPress={() => openQuizModal(item)}
@@ -785,7 +1116,8 @@ const QuizMaker = () => {
                     </View>
                   </View>
 
-                  <View style={styles.settingGroup}>
+                  {/* Number of Questions - Removed for automatic generation */}
+                  {/* <View style={styles.settingGroup}>
                     <Text style={styles.settingLabel}>Number of Questions</Text>
                     <View style={styles.questionCountButtons}>
                       {[3, 5, 10, 15].map((count) => (
@@ -806,7 +1138,7 @@ const QuizMaker = () => {
                         </TouchableOpacity>
                       ))}
                     </View>
-                  </View>
+                  </View> */}
 
                   <TouchableOpacity
                     style={[
@@ -981,7 +1313,8 @@ const QuizMaker = () => {
                     </View>
                   </View>
 
-                  <View style={styles.settingGroup}>
+                  {/* Number of Questions - Removed for automatic generation */}
+                  {/* <View style={styles.settingGroup}>
                     <Text style={styles.settingLabel}>Number of Questions</Text>
                     <View style={styles.questionCountButtons}>
                       {[3, 5, 10, 15].map((count) => (
@@ -1002,7 +1335,7 @@ const QuizMaker = () => {
                         </TouchableOpacity>
                       ))}
                     </View>
-                  </View>
+                  </View> */}
                 </View>
               )}
 
@@ -1067,7 +1400,7 @@ const QuizMaker = () => {
             {/* Modal Header */}
             <View style={styles.modalHeader}>
               <View style={styles.modalTitleContainer}>
-                <Text style={styles.modalTitle}>Create Manual Quiz</Text>
+                <Text style={styles.modalTitle}>Create Custom Quiz</Text>
                 <TouchableOpacity 
                   onPress={closeManualQuizModal}
                   style={styles.closeButton}
@@ -1081,103 +1414,447 @@ const QuizMaker = () => {
               style={styles.modalContent}
               showsVerticalScrollIndicator={false}
             >
-              {/* Quiz Form */}
-              <View style={styles.formSection}>
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Quiz Title</Text>
-                  <TextInput
-                    style={styles.titleInput}
-                    value={manualQuizTitle}
-                    onChangeText={setManualQuizTitle}
-                    placeholder="Enter quiz title..."
-                    placeholderTextColor="#9ca3af"
-                    returnKeyType="next"
-                  />
-                </View>
+              {/* Quiz Title */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Quiz Title</Text>
+                <TextInput
+                  style={styles.titleInput}
+                  value={manualQuizTitle}
+                  onChangeText={setManualQuizTitle}
+                  placeholder="Enter quiz title..."
+                  placeholderTextColor="#9ca3af"
+                  returnKeyType="next"
+                />
+              </View>
 
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Quiz Content</Text>
-                  <View style={styles.contentInputContainer}>
+              {/* Question Navigation */}
+              <View style={styles.questionNavigation}>
+                <Text style={styles.navigationTitle}>Questions ({manualQuizQuestions.length})</Text>
+                <ScrollView 
+                  horizontal 
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.questionTabs}
+                >
+                  {manualQuizQuestions.map((_, index) => (
+                    <TouchableOpacity
+                      key={index}
+                      style={[
+                        styles.questionTab,
+                        currentQuestionIndex === index && styles.questionTabActive
+                      ]}
+                      onPress={() => setCurrentQuestionIndex(index)}
+                    >
+                      <Text style={[
+                        styles.questionTabText,
+                        currentQuestionIndex === index && styles.questionTabTextActive
+                      ]}>
+                        {index + 1}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                  <TouchableOpacity
+                    style={styles.addQuestionTab}
+                    onPress={addQuestion}
+                  >
+                    <Ionicons name="add" size={20} color="#10b981" />
+                  </TouchableOpacity>
+                </ScrollView>
+              </View>
+
+              {/* Current Question */}
+              {manualQuizQuestions.length > 0 && (
+                <View style={styles.questionSection}>
+                  <View style={styles.questionHeader}>
+                    <Text style={styles.questionNumber}>Question {currentQuestionIndex + 1}</Text>
+                    {manualQuizQuestions.length > 1 && (
+                      <TouchableOpacity
+                        style={styles.removeQuestionButton}
+                        onPress={() => removeQuestion(currentQuestionIndex)}
+                      >
+                        <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {/* Question Type Selection */}
+                  <View style={styles.questionTypeSection}>
+                    <Text style={styles.inputLabel}>Question Type</Text>
+                    <View style={styles.questionTypeButtons}>
+                      <TouchableOpacity
+                        style={[
+                          styles.questionTypeButton,
+                          manualQuizQuestions[currentQuestionIndex].questionType === 'multiple-choice' && 
+                          styles.questionTypeButtonActive
+                        ]}
+                        onPress={() => updateQuestionType(currentQuestionIndex, 'multiple-choice')}
+                      >
+                        <Ionicons 
+                          name="list-outline" 
+                          size={20} 
+                          color={manualQuizQuestions[currentQuestionIndex].questionType === 'multiple-choice' ? '#fff' : '#6b7280'} 
+                        />
+                        <Text style={[
+                          styles.questionTypeButtonText,
+                          manualQuizQuestions[currentQuestionIndex].questionType === 'multiple-choice' && 
+                          styles.questionTypeButtonTextActive
+                        ]}>
+                          Multiple Choice
+                        </Text>
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity
+                        style={[
+                          styles.questionTypeButton,
+                          manualQuizQuestions[currentQuestionIndex].questionType === 'true-false' && 
+                          styles.questionTypeButtonActive
+                        ]}
+                        onPress={() => updateQuestionType(currentQuestionIndex, 'true-false')}
+                      >
+                        <Ionicons 
+                          name="checkmark-done-outline" 
+                          size={20} 
+                          color={manualQuizQuestions[currentQuestionIndex].questionType === 'true-false' ? '#fff' : '#6b7280'} 
+                        />
+                        <Text style={[
+                          styles.questionTypeButtonText,
+                          manualQuizQuestions[currentQuestionIndex].questionType === 'true-false' && 
+                          styles.questionTypeButtonTextActive
+                        ]}>
+                          True/False
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* Question Text */}
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Question</Text>
                     <TextInput
-                      style={styles.contentInput}
-                      value={manualQuizContent}
-                      onChangeText={setManualQuizContent}
-                      placeholder="Enter your quiz content here...&#10;&#10;Example:&#10;1. What is the capital of France?&#10;   A) London&#10;   B) Paris&#10;   C) Berlin&#10;   D) Madrid&#10;&#10;2. Which planet is closest to the Sun?&#10;   A) Venus&#10;   B) Earth&#10;   C) Mercury&#10;   D) Mars&#10;&#10;ANSWERS:&#10;1. B) Paris&#10;2. C) Mercury"
+                      style={styles.questionInput}
+                      value={manualQuizQuestions[currentQuestionIndex].question}
+                      onChangeText={(text) => updateQuestion(currentQuestionIndex, 'question', text)}
+                      placeholder="Enter your question..."
                       placeholderTextColor="#9ca3af"
                       multiline
                       textAlignVertical="top"
                     />
                   </View>
-                </View>
 
-                <View style={styles.settingGroup}>
-                  <Text style={styles.settingLabel}>Quiz Type</Text>
-                  <View style={styles.quizTypeButtons}>
-                    {(['multiple-choice', 'true-false', 'fill-blank'] as QuizType[]).map((type) => (
-                      <TouchableOpacity
-                        key={type}
-                        style={[
-                          styles.quizTypeButton,
-                          manualQuizType === type && styles.quizTypeButtonActive
-                        ]}
-                        onPress={() => setManualQuizType(type)}
-                      >
-                        <Text style={[
-                          styles.quizTypeButtonText,
-                          manualQuizType === type && styles.quizTypeButtonTextActive
-                        ]}>
-                          {type.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
+                  {/* Answer Options */}
+                  <View style={styles.optionsSection}>
+                    <Text style={styles.inputLabel}>Answer Options</Text>
+                    <Text style={styles.optionsSubtitle}>
+                      {manualQuizQuestions[currentQuestionIndex].questionType === 'true-false' 
+                        ? 'Tap the checkmark to mark the correct answer' 
+                        : 'Tap the checkmark to mark the correct answer'
+                      }
+                    </Text>
+                    
+                    {manualQuizQuestions[currentQuestionIndex].questionType === 'true-false' ? (
+                      // True/False options
+                      <>
+                        <View style={styles.optionContainer}>
+                          <View style={styles.optionInputContainer}>
+                            <Text style={styles.optionLetter}>A</Text>
+                            <Text style={styles.trueFalseOption}>True</Text>
+                          </View>
+                          <TouchableOpacity
+                            style={[
+                              styles.correctAnswerButton,
+                              manualQuizQuestions[currentQuestionIndex].correctAnswer === 0 && 
+                              styles.correctAnswerButtonActive
+                            ]}
+                            onPress={() => setCorrectAnswer(currentQuestionIndex, 0)}
+                          >
+                            <Ionicons 
+                              name="checkmark" 
+                              size={16} 
+                              color={manualQuizQuestions[currentQuestionIndex].correctAnswer === 0 ? "#fff" : "#9ca3af"} 
+                            />
+                          </TouchableOpacity>
+                        </View>
+                        
+                        <View style={styles.optionContainer}>
+                          <View style={styles.optionInputContainer}>
+                            <Text style={styles.optionLetter}>B</Text>
+                            <Text style={styles.trueFalseOption}>False</Text>
+                          </View>
+                          <TouchableOpacity
+                            style={[
+                              styles.correctAnswerButton,
+                              manualQuizQuestions[currentQuestionIndex].correctAnswer === 1 && 
+                              styles.correctAnswerButtonActive
+                            ]}
+                            onPress={() => setCorrectAnswer(currentQuestionIndex, 1)}
+                          >
+                            <Ionicons 
+                              name="checkmark" 
+                              size={16} 
+                              color={manualQuizQuestions[currentQuestionIndex].correctAnswer === 1 ? "#fff" : "#9ca3af"} 
+                            />
+                          </TouchableOpacity>
+                        </View>
+                      </>
+                    ) : (
+                      // Multiple choice options
+                      manualQuizQuestions[currentQuestionIndex].options.map((option, optionIndex) => (
+                        <View key={optionIndex} style={styles.optionContainer}>
+                          <View style={styles.optionInputContainer}>
+                            <Text style={styles.optionLetter}>
+                              {String.fromCharCode(65 + optionIndex)}
+                            </Text>
+                            <TextInput
+                              style={styles.optionInput}
+                              value={option}
+                              onChangeText={(text) => updateOption(currentQuestionIndex, optionIndex, text)}
+                              placeholder={`Option ${String.fromCharCode(65 + optionIndex)}`}
+                              placeholderTextColor="#9ca3af"
+                            />
+                          </View>
+                          <TouchableOpacity
+                            style={[
+                              styles.correctAnswerButton,
+                              manualQuizQuestions[currentQuestionIndex].correctAnswer === optionIndex && 
+                              styles.correctAnswerButtonActive
+                            ]}
+                            onPress={() => setCorrectAnswer(currentQuestionIndex, optionIndex)}
+                          >
+                            <Ionicons 
+                              name="checkmark" 
+                              size={16} 
+                              color={manualQuizQuestions[currentQuestionIndex].correctAnswer === optionIndex ? "#fff" : "#9ca3af"} 
+                            />
+                          </TouchableOpacity>
+                        </View>
+                      ))
+                    )}
                   </View>
                 </View>
+              )}
 
-                <View style={styles.settingGroup}>
-                  <Text style={styles.settingLabel}>Number of Questions</Text>
-                  <View style={styles.questionCountButtons}>
-                    {[3, 5, 10, 15].map((count) => (
-                      <TouchableOpacity
-                        key={count}
-                        style={[
-                          styles.questionCountButton,
-                          manualQuizQuestions === count && styles.questionCountButtonActive
-                        ]}
-                        onPress={() => setManualQuizQuestions(count)}
-                      >
-                        <Text style={[
-                          styles.questionCountButtonText,
-                          manualQuizQuestions === count && styles.questionCountButtonTextActive
-                        ]}>
-                          {count}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-
-                <TouchableOpacity
-                  style={[
-                    styles.saveButton,
-                    isSavingManualQuiz && styles.saveButtonDisabled
-                  ]}
-                  onPress={saveManualQuiz}
-                  disabled={isSavingManualQuiz}
-                >
-                  {isSavingManualQuiz ? (
-                    <ActivityIndicator color="white" size="small" />
-                  ) : (
-                    <>
-                      <Ionicons name="save-outline" size={20} color="white" />
-                      <Text style={styles.saveButtonText}>Save Quiz</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </View>
+              {/* Save Button */}
+              <TouchableOpacity
+                style={[
+                  styles.saveButton,
+                  isSavingManualQuiz && styles.saveButtonDisabled
+                ]}
+                onPress={saveManualQuiz}
+                disabled={isSavingManualQuiz}
+              >
+                {isSavingManualQuiz ? (
+                  <ActivityIndicator color="white" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="save-outline" size={20} color="white" />
+                    <Text style={styles.saveButtonText}>Save Quiz</Text>
+                  </>
+                )}
+              </TouchableOpacity>
             </ScrollView>
           </View>
         </SafeAreaView>
       </Modal>
+
+      {/* Practice Modal */}
+      <Modal
+        visible={practiceModalVisible}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={closePracticeModal}
+      >
+        <SafeAreaView style={styles.modalSafeAreView}>
+          <View style={styles.modalContainer}>
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleContainer}>
+                <Text style={styles.modalTitle}>
+                  {practiceState.isComplete ? 'Quiz Complete!' : 'Practice Quiz'}
+                </Text>
+                <TouchableOpacity 
+                  onPress={closePracticeModal}
+                  style={styles.closeButton}
+                >
+                  <Ionicons name="close" size={24} color="#6b7280" />
+                </TouchableOpacity>
+              </View>
+              {selectedQuiz && (
+                <Text style={styles.selectedNoteTitle}>
+                  {selectedQuiz.title}
+                </Text>
+              )}
+            </View>
+
+            {practiceState.isComplete ? (
+              // Results Screen
+              <View style={styles.resultsContainer}>
+                <View style={styles.resultsHeader}>
+                  <Ionicons 
+                    name={practiceState.score === practiceState.questions.length ? "trophy" : "star"} 
+                    size={80} 
+                    color={practiceState.score === practiceState.questions.length ? "#fbbf24" : "#10b981"} 
+                  />
+                  <Text style={styles.resultsTitle}>
+                    {practiceState.score === practiceState.questions.length ? "Perfect Score!" : "Great Job!"}
+                  </Text>
+                  <Text style={styles.resultsScore}>
+                    {practiceState.score} / {practiceState.questions.length} Correct
+                  </Text>
+                  <Text style={styles.resultsPercentage}>
+                    {Math.round((practiceState.score / practiceState.questions.length) * 100)}%
+                  </Text>
+                </View>
+                
+                <View style={styles.resultsActions}>
+                  <TouchableOpacity
+                    style={styles.restartButton}
+                    onPress={restartPractice}
+                  >
+                    <Ionicons name="refresh-outline" size={20} color="white" />
+                    <Text style={styles.restartButtonText}>Try Again</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              // Question Screen
+              <View style={styles.practiceContent}>
+                {/* Progress Bar */}
+                <View style={styles.progressSection}>
+                  <Text style={styles.progressText}>
+                    Question {practiceState.currentQuestionIndex + 1} of {practiceState.questions.length}
+                  </Text>
+                  <View style={styles.progressBarContainer}>
+                    <View 
+                      style={[
+                        styles.progressBar,
+                        { width: `${((practiceState.currentQuestionIndex + 1) / practiceState.questions.length) * 100}%` }
+                      ]} 
+                    />
+                  </View>
+                </View>
+
+                {/* Question */}
+                <View style={styles.questionContainer}>
+                  <Text style={styles.questionText}>
+                    {practiceState.questions[practiceState.currentQuestionIndex]?.question}
+                  </Text>
+                </View>
+
+                {/* Options */}
+                <View style={styles.optionsContainer}>
+                  {practiceState.questions[practiceState.currentQuestionIndex]?.options.map((option, index) => {
+                    const isSelected = practiceState.userAnswers[practiceState.currentQuestionIndex] === index;
+                    const isCorrect = index === practiceState.questions[practiceState.currentQuestionIndex]?.correctAnswer;
+                    const showCorrect = practiceState.showAnswers;
+                    
+                    let optionStyle = styles.optionButton;
+                    if (isSelected && showCorrect) {
+                      optionStyle = isCorrect ? styles.optionButtonCorrect : styles.optionButtonIncorrect;
+                    } else if (showCorrect && isCorrect) {
+                      optionStyle = styles.optionButtonCorrect;
+                    } else if (isSelected) {
+                      optionStyle = styles.optionButtonSelected;
+                    }
+
+                    return (
+                      <TouchableOpacity
+                        key={index}
+                        style={optionStyle}
+                        onPress={() => !practiceState.showAnswers && selectAnswer(index)}
+                        disabled={practiceState.showAnswers}
+                      >
+                        <Text style={styles.optionLetter}>
+                          {String.fromCharCode(65 + index)}
+                        </Text>
+                        <Text style={styles.optionText}>{option}</Text>
+                        {showCorrect && isCorrect && (
+                          <Ionicons name="checkmark-circle" size={20} color="#10b981" />
+                        )}
+                        {showCorrect && isSelected && !isCorrect && (
+                          <Ionicons name="close-circle" size={20} color="#ef4444" />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {/* Action Buttons */}
+                <View style={styles.practiceActions}>
+                  {!practiceState.showAnswers ? (
+                    <TouchableOpacity
+                      style={[
+                        styles.actionButton,
+                        practiceState.userAnswers[practiceState.currentQuestionIndex] === -1 && styles.actionButtonDisabled
+                      ]}
+                      onPress={showAnswer}
+                      disabled={practiceState.userAnswers[practiceState.currentQuestionIndex] === -1}
+                    >
+                      <Ionicons name="eye-outline" size={20} color="white" />
+                      <Text style={styles.actionButtonText}>Check Answer</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={styles.navigationButtons}>
+                      <TouchableOpacity
+                        style={[
+                          styles.navButton,
+                          practiceState.currentQuestionIndex === 0 && styles.navButtonDisabled
+                        ]}
+                        onPress={previousQuestion}
+                        disabled={practiceState.currentQuestionIndex === 0}
+                      >
+                        <Ionicons name="chevron-back" size={20} color="#6b7280" />
+                        <Text style={styles.navButtonText}>Previous</Text>
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity
+                        style={styles.navButton}
+                        onPress={nextQuestion}
+                      >
+                        <Text style={styles.navButtonText}>
+                          {practiceState.currentQuestionIndex === practiceState.questions.length - 1 ? 'Finish' : 'Next'}
+                        </Text>
+                        <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              </View>
+            )}
+          </View>
+        </SafeAreaView>
+      </Modal>
+
+      {practiceModeSelectVisible && (
+        <Modal
+          visible={practiceModeSelectVisible}
+          animationType="fade"
+          transparent
+          onRequestClose={() => setPracticeModeSelectVisible(false)}
+        >
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.3)' }}>
+            <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: 32, alignItems: 'center', width: 320 }}>
+              <Text style={{ fontSize: 20, fontWeight: '700', marginBottom: 16 }}>Choose Practice Mode</Text>
+              <TouchableOpacity
+                style={{ backgroundColor: '#f093fb', padding: 16, borderRadius: 8, marginBottom: 16, width: '100%', alignItems: 'center' }}
+                onPress={() => { setPracticeModeSelectVisible(false); startPractice(selectedQuiz!, 'per-question'); }}
+              >
+                <Text style={{ color: '#fff', fontWeight: '600', fontSize: 16 }}>Check After Each Question</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ backgroundColor: '#10b981', padding: 16, borderRadius: 8, width: '100%', alignItems: 'center' }}
+                onPress={() => { setPracticeModeSelectVisible(false); startPractice(selectedQuiz!, 'all-at-once'); }}
+              >
+                <Text style={{ color: '#fff', fontWeight: '600', fontSize: 16 }}>Check After All Questions</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ marginTop: 16 }}
+                onPress={() => setPracticeModeSelectVisible(false)}
+              >
+                <Text style={{ color: '#ef4444', fontWeight: '500' }}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 };
@@ -1740,6 +2417,325 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 24,
     marginTop: 16,
+  },
+  questionNavigation: {
+    marginBottom: 24,
+  },
+  navigationTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 12,
+  },
+  questionTabs: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingRight: 16,
+  },
+  questionTab: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: '#e5e7eb',
+    backgroundColor: '#f9fafb',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  questionTabActive: {
+    backgroundColor: '#f093fb',
+    borderColor: '#f093fb',
+  },
+  questionTabText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#4b5563',
+  },
+  questionTabTextActive: {
+    color: 'white',
+  },
+  addQuestionTab: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: '#10b981',
+    borderStyle: 'dashed',
+    backgroundColor: '#f0fdf4',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  questionSection: {
+    backgroundColor: '#f9fafb',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  questionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  questionNumber: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  removeQuestionButton: {
+    padding: 8,
+    backgroundColor: '#fef2f2',
+    borderRadius: 8,
+  },
+  questionInput: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    color: '#374151',
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  optionsSection: {
+    marginTop: 16,
+  },
+  optionsSubtitle: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 16,
+    fontStyle: 'italic',
+  },
+  optionContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    backgroundColor: '#ffffff',
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  optionInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  optionLetter: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#f093fb',
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 24,
+    marginRight: 12,
+  },
+  optionInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#374151',
+    paddingVertical: 4,
+  },
+  optionText: {
+    flex: 1,
+    fontSize: 16,
+    color: '#374151',
+    fontWeight: '500',
+  },
+  correctAnswerButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#e5e7eb',
+    backgroundColor: '#f9fafb',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 12,
+  },
+  correctAnswerButtonActive: {
+    backgroundColor: '#10b981',
+    borderColor: '#10b981',
+  },
+  questionTypeSection: {
+    marginBottom: 24,
+  },
+  questionTypeButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  questionTypeButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f9fafb',
+    borderWidth: 2,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  questionTypeButtonActive: {
+    backgroundColor: '#f093fb',
+    borderColor: '#f093fb',
+  },
+  questionTypeButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  questionTypeButtonTextActive: {
+    color: 'white',
+  },
+  trueFalseOption: {
+    fontSize: 16,
+    color: '#374151',
+    fontWeight: '500',
+  },
+  resultsContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  resultsHeader: {
+    marginBottom: 24,
+  },
+  resultsTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  resultsScore: {
+    fontSize: 16,
+    color: '#6b7280',
+    fontWeight: '500',
+  },
+  resultsPercentage: {
+    fontSize: 14,
+    color: '#6b7280',
+    fontWeight: '500',
+  },
+  resultsActions: {
+    marginTop: 24,
+  },
+  restartButton: {
+    backgroundColor: '#10b981',
+    padding: 12,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  restartButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  practiceContent: {
+    flex: 1,
+    padding: 40,
+  },
+  progressSection: {
+    marginBottom: 24,
+  },
+  questionContainer: {
+    marginBottom: 24,
+  },
+  questionText: {
+    fontSize: 16,
+    color: '#111827',
+    fontWeight: '600',
+  },
+  optionsContainer: {
+    marginBottom: 24,
+  },
+  optionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderWidth: 2,
+    borderColor: '#e5e7eb',
+    borderRadius: 8,
+  },
+  optionButtonCorrect: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderWidth: 2,
+    borderColor: '#10b981',
+    borderRadius: 8,
+    backgroundColor: '#d1fae5',
+  },
+  optionButtonIncorrect: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderWidth: 2,
+    borderColor: '#ef4444',
+    borderRadius: 8,
+    backgroundColor: '#fef2f2',
+  },
+  optionButtonSelected: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderWidth: 2,
+    borderColor: '#f093fb',
+    borderRadius: 8,
+    backgroundColor: '#f0f0ff',
+  },
+  practiceActions: {
+    marginTop: 24,
+    alignItems: 'center',
+  },
+  actionButton: {
+    backgroundColor: '#f093fb',
+    padding: 12,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionButtonDisabled: {
+    backgroundColor: '#9ca3af',
+  },
+  actionButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  navigationButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  navButton: {
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: '#f0f0ff',
+  },
+  navButtonDisabled: {
+    backgroundColor: '#9ca3af',
+  },
+  navButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  practiceButton: {
+    padding: 4,
+    marginLeft: 8,
   },
 });
 

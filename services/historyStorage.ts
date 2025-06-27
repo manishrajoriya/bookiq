@@ -14,6 +14,7 @@ export const initDatabase = async () => {
     console.log("DATABASE: Initializing all tables...");
     await initHistoryTable();
     await initCreditsTable();
+    await initExpiringCreditsTable();
     await initNotesTable();
     await initScanNotesTable();
     await initQuizTable();
@@ -187,15 +188,42 @@ export const initCreditsTable = async () => {
   const res = await localDb.getAllAsync('SELECT * FROM credits WHERE id = 1;');
   if (!res || res.length === 0) {
     await localDb.runAsync(
-      'INSERT INTO credits (id, balance) VALUES (1, 10);'
+      'INSERT INTO credits (id, balance) VALUES (1, 0);'
     );
   }
 };
 
-export const getCredits = async (): Promise<number> => {
+export const initExpiringCreditsTable = async () => {
   const localDb = await getDb();
-  const res = (await localDb.getAllAsync('SELECT balance FROM credits WHERE id = 1;')) as { balance: number }[];
-  return res.length > 0 ? res[0].balance : 0;
+  await localDb.execAsync(
+    'CREATE TABLE IF NOT EXISTS expiring_credits (id INTEGER PRIMARY KEY AUTOINCREMENT, amount INTEGER, expires_at TEXT);'
+  );
+};
+
+export const addExpiringCredits = async (amount: number, expires_at: string) => {
+    const localDb = await getDb();
+    await localDb.runAsync(
+        'INSERT INTO expiring_credits (amount, expires_at) VALUES (?, ?);',
+        [amount, expires_at]
+    );
+};
+
+const cleanupExpiredCredits = async () => {
+    const localDb = await getDb();
+    await localDb.runAsync('DELETE FROM expiring_credits WHERE expires_at < ?;', [new Date().toISOString()]);
+};
+
+export const getCredits = async (): Promise<number> => {
+  await cleanupExpiredCredits();
+  const localDb = await getDb();
+  
+  const permanentCreditsRes = await localDb.getFirstAsync('SELECT balance FROM credits WHERE id = 1;');
+  const permanentCredits = (permanentCreditsRes as { balance: number })?.balance ?? 0;
+
+  const expiringCreditsRes = await localDb.getFirstAsync('SELECT SUM(amount) as total FROM expiring_credits;');
+  const expiringCredits = (expiringCreditsRes as { total: number })?.total ?? 0;
+  
+  return permanentCredits + expiringCredits;
 };
 
 export const addCredits = async (amount: number) => {
@@ -207,15 +235,42 @@ export const addCredits = async (amount: number) => {
 };
 
 export const spendCredits = async (amount: number): Promise<boolean> => {
-  const localDb = await getDb();
-  const res = (await localDb.getAllAsync('SELECT balance FROM credits WHERE id = 1;')) as { balance: number }[];
-  const current = res.length > 0 ? res[0].balance : 0;
-  if (current < amount) return false;
-  await localDb.runAsync(
-    'UPDATE credits SET balance = balance - ? WHERE id = 1;',
-    [amount]
-  );
-  return true;
+    const localDb = await getDb();
+    await cleanupExpiredCredits();
+
+    const permanentCreditsRes = await localDb.getFirstAsync<{ balance: number }>('SELECT balance FROM credits WHERE id = 1;');
+    const permanentCredits = permanentCreditsRes?.balance ?? 0;
+
+    const expiringCreditsRes = await localDb.getFirstAsync<{ total: number }>('SELECT SUM(amount) as total FROM expiring_credits;');
+    const expiringCreditsTotal = expiringCreditsRes?.total ?? 0;
+
+    if ((permanentCredits + expiringCreditsTotal) < amount) {
+        return false;
+    }
+
+    let amountToDeduct = amount;
+
+    const expiringCredits = await localDb.getAllAsync<{id: number, amount: number}>('SELECT id, amount FROM expiring_credits ORDER BY expires_at ASC;');
+
+    for (const credit of expiringCredits) {
+        if (amountToDeduct === 0) break;
+        
+        const deductAmount = Math.min(amountToDeduct, credit.amount);
+        const newAmount = credit.amount - deductAmount;
+        amountToDeduct -= deductAmount;
+
+        if (newAmount === 0) {
+            await localDb.runAsync('DELETE FROM expiring_credits WHERE id = ?;', [credit.id]);
+        } else {
+            await localDb.runAsync('UPDATE expiring_credits SET amount = ? WHERE id = ?;', [newAmount, credit.id]);
+        }
+    }
+
+    if (amountToDeduct > 0) {
+        await localDb.runAsync('UPDATE credits SET balance = balance - ? WHERE id = 1;', [amountToDeduct]);
+    }
+
+    return true;
 };
 
 // --- Scan Notes ---
@@ -287,7 +342,6 @@ export interface Quiz {
   title: string;
   content: string;
   quiz_type: string;
-  number_of_questions: number;
   source_note_id?: number;
   source_note_type?: string;
   createdAt: string;
@@ -301,7 +355,6 @@ export const initQuizTable = async () => {
         title TEXT, 
         content TEXT,
         quiz_type TEXT,
-        number_of_questions INTEGER,
         source_note_id INTEGER,
         source_note_type TEXT,
         createdAt TEXT
@@ -319,8 +372,8 @@ export const addQuiz = async (
 ): Promise<number> => {
     const localDb = await getDb();
     const result = await localDb.runAsync(
-      "INSERT INTO quiz_maker (title, content, quiz_type, number_of_questions, source_note_id, source_note_type, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?);",
-      [title, content, quizType, numberOfQuestions, sourceNoteId || null, sourceNoteType || null, new Date().toISOString()]
+      "INSERT INTO quiz_maker (title, content, quiz_type, source_note_id, source_note_type, createdAt) VALUES (?, ?, ?, ?, ?, ?);",
+      [title, content, quizType, sourceNoteId || null, sourceNoteType || null, new Date().toISOString()]
     );
     return result.lastInsertRowId;
 };
@@ -411,7 +464,7 @@ export const migrateDatabase = async () => {
         { name: 'title', type: 'TEXT' },
         { name: 'content', type: 'TEXT' },
         { name: 'quiz_type', type: 'TEXT' },
-        { name: 'number_of_questions', type: 'INTEGER' },
+        
         { name: 'source_note_id', type: 'INTEGER' },
         { name: 'source_note_type', type: 'TEXT' },
         { name: 'createdAt', type: 'TEXT' }
@@ -443,11 +496,6 @@ export const migrateDatabase = async () => {
         if (!quiz.quiz_type) {
           updates.push("quiz_type = ?");
           values.push('multiple-choice');
-        }
-        
-        if (!quiz.number_of_questions) {
-          updates.push("number_of_questions = ?");
-          values.push(5);
         }
         
         if (!quiz.createdAt) {
@@ -519,4 +567,4 @@ export const getAllFlashCardSets = async (): Promise<FlashCardSet[]> => {
       console.warn("Could not get flash card sets.", error);
       return [];
     }
-}; 
+};

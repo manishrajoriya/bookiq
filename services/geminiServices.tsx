@@ -103,16 +103,15 @@ export const getAnswerFromGemini = async (
 
 export const generateQuizFromNotes = async (
   notesContent: string,
-  quizType: 'multiple-choice' | 'true-false' | 'fill-blank' = 'multiple-choice',
-  numberOfQuestions: number = 5
+  quizType: 'multiple-choice' | 'true-false' | 'fill-blank' = 'multiple-choice'
 ): Promise<string> => {
-  const prompt = `You are an expert quiz generator. Create a comprehensive quiz based on the following study notes content.
+  const prompt = `You are an expert quiz generator. Create a comprehensive quiz based on the following content.
 
-Study Notes Content:
+Content:
 "${notesContent}"
 
 Requirements:
-- Generate ${numberOfQuestions} ${quizType} questions
+- Generate 8-12 ${quizType} questions (aim for 10 questions)
 - Make questions challenging but fair
 - Include a mix of difficulty levels
 - For multiple choice: provide 4 options (A, B, C, D) with only one correct answer
@@ -121,7 +120,7 @@ Requirements:
 - Format the output clearly with question numbers
 - Include the correct answers at the end
 
-Please format your response as follows:
+Please format your response exactly as follows:
 1. [Question 1]
    A) [Option A]
    B) [Option B]
@@ -129,12 +128,17 @@ Please format your response as follows:
    D) [Option D]
 
 2. [Question 2]
-   ...
+   A) [Option A]
+   B) [Option B]
+   C) [Option C]
+   D) [Option D]
+
+[Continue with more questions...]
 
 ANSWERS:
-1. [Correct answer with explanation]
-2. [Correct answer with explanation]
-...`;
+1. [Correct answer letter] - [Brief explanation]
+2. [Correct answer letter] - [Brief explanation]
+[Continue with all answers...]`;
 
   try {
     const response = await axios.post(

@@ -250,32 +250,37 @@ const StudyNotes = () => {
       
       const hasEnoughCredits = await spendCredits(1);
       if (!hasEnoughCredits) {
-        return {
-          success: false,
-          error: 'Insufficient credits. Please purchase more credits to continue scanning.'
-        };
+        Alert.alert(
+            "Out of Credits",
+            "You need at least 1 credit to scan an image.",
+            [
+                { text: "Cancel", style: "cancel" },
+                { text: "Get Credits", onPress: () => router.push('/paywall') }
+            ]
+        );
+        setScanState(prev => ({ ...prev, isProcessing: false, progress: 0 }));
+        return { success: false, error: 'Insufficient credits' };
       }
 
       setScanState(prev => ({ ...prev, progress: 30 }));
-
-      const extractedText = await processImage(uri);
+      const text = await processImage(uri);
       
       setScanState(prev => ({ ...prev, progress: 80 }));
 
-      if (!extractedText || extractedText.trim().length === 0) {
+      if (!text || text.trim().length === 0) {
         return {
           success: false,
           error: 'No text could be detected in the image. Please try with a clearer image.'
         };
       }
 
-      const confidence = Math.min(95, Math.max(60, extractedText.length / 10));
+      const confidence = Math.min(95, Math.max(60, text.length / 10));
       
       setScanState(prev => ({ ...prev, progress: 100 }));
 
       return {
         success: true,
-        text: extractedText,
+        text: text,
         confidence: confidence
       };
 
@@ -502,10 +507,17 @@ const StudyNotes = () => {
 
     try {
       setIsGeneratingQuiz(true);
-
       const hasEnoughCredits = await spendCredits(2);
       if (!hasEnoughCredits) {
-        Alert.alert('Insufficient Credits', 'You need 2 credits to generate a quiz.');
+        Alert.alert(
+            "Out of Credits",
+            "You need at least 2 credits to generate a quiz.",
+            [
+                { text: "Cancel", style: "cancel" },
+                { text: "Get Credits", onPress: () => router.push('/paywall') }
+            ]
+        );
+        setIsGeneratingQuiz(false);
         return;
       }
 

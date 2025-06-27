@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
+import { useRouter } from 'expo-router';
 import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -41,6 +42,7 @@ interface ErrorState {
 type CardType = 'term-definition' | 'question-answer';
 
 const FlashCardMaker = () => {
+  const router = useRouter();
   // State management
   const [flashCardSets, setFlashCardSets] = useState<FlashCardSet[]>([]);
   const [loading, setLoading] = useState(true);
@@ -210,7 +212,14 @@ const FlashCardMaker = () => {
     try {
       const hasEnoughCredits = await spendCredits(1);
       if (!hasEnoughCredits) {
-        handleError('credits', 'Insufficient credits. You need 1 credit to scan and 2 credits to generate a flash card set.', false);
+        Alert.alert(
+          "Out of Credits",
+          "You need at least 1 credit to scan an image.",
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Get Credits", onPress: () => router.push('/paywall') }
+          ]
+        );
         return;
       }
 
@@ -237,7 +246,15 @@ const FlashCardMaker = () => {
 
       const hasEnoughCredits = await spendCredits(2);
       if (!hasEnoughCredits) {
-        handleError('credits', 'You need 2 credits to generate a flash card set. Please purchase more credits.', false);
+        Alert.alert(
+          "Out of Credits",
+          "You need at least 2 credits to generate flash cards.",
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Get Credits", onPress: () => router.push('/paywall') }
+          ]
+        );
+        setFlashCardState(prev => ({ ...prev, isGenerating: false }));
         return;
       }
 
@@ -305,7 +322,15 @@ const FlashCardMaker = () => {
 
       const hasEnoughCredits = await spendCredits(2);
       if (!hasEnoughCredits) {
-        handleError('credits', 'You need 2 credits to generate a set. Please purchase more credits.', false);
+        Alert.alert(
+          "Out of Credits",
+          "You need at least 2 credits to generate flash cards.",
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Get Credits", onPress: () => router.push('/paywall') }
+          ]
+        );
+        setFlashCardState(prev => ({ ...prev, isGenerating: false }));
         return;
       }
 

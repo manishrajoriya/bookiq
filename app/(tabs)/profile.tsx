@@ -1,24 +1,26 @@
+import { usePurchases } from '@/providers/PurchasesProvider';
 import {
-  addCredits,
-  getAllHistory,
-  getAllNotes,
-  getCredits
+    addCredits,
+    getAllHistory,
+    getAllNotes,
+    getCredits
 } from "@/services/historyStorage";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
+import { useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import {
-  Alert,
-  FlatList,
-  Image,
-  ListRenderItemInfo,
-  Platform,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    Alert,
+    FlatList,
+    Image,
+    ListRenderItemInfo,
+    Platform,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 
 // Constants
@@ -91,6 +93,7 @@ interface ProfileHeaderProps {
     onRefresh: () => void;
     onClearHistory: () => void;
     onGetFreeCredits: () => void;
+    onGoPro: () => void;
 }
 
 interface StatsCardProps {
@@ -128,6 +131,7 @@ const ProfileHeader: React.FC<ProfileHeaderProps> = ({
     onRefresh,
     onClearHistory,
     onGetFreeCredits,
+    onGoPro,
 }) => (
     <View style={styles.profileHeader}>
         <View style={styles.headerContent}>
@@ -170,16 +174,17 @@ const ProfileHeader: React.FC<ProfileHeaderProps> = ({
             </TouchableOpacity>
         </View>
         
-        <TouchableOpacity
-            style={styles.creditsButton}
-            onPress={onGetFreeCredits}
-            // disabled={loading}
-            disabled={true}
-        >
-            <Ionicons name="gift" size={20} color={COLORS.text.white} />
-            <Text style={styles.creditsButtonText}>Get 10 Free Credits</Text>
-            <Ionicons name="arrow-forward" size={16} color={COLORS.text.white} />
-        </TouchableOpacity>
+        <View style={styles.buttonGroup}>
+
+            <TouchableOpacity
+                style={styles.proButton}
+                onPress={onGoPro}
+                // disabled={true}
+            >
+                <Ionicons name="rocket" size={20} color={COLORS.text.white} />
+                <Text style={styles.creditsButtonText}>Go PRO</Text>
+            </TouchableOpacity>
+        </View>
     </View>
 );
 
@@ -347,6 +352,8 @@ const Profile: React.FC = () => {
         daysActive: 0,
         notesCreated: 0,
     });
+    const { isPro } = usePurchases();
+    const router = useRouter();
 
     const loadData = useCallback(async () => {
         try {
@@ -423,10 +430,15 @@ const Profile: React.FC = () => {
             setLoading(true);
             await addCredits(10);
             await loadData();
+            Alert.alert("Success", "10 free credits have been added to your account!");
         } catch (error) {
             console.error("Error adding credits:", error);
         }
     }, [loadData]);
+
+    const handleGoPro = () => {
+        router.push('/paywall');
+    };
 
     const filteredHistory = history.filter(
         (item) => activeFilter === "All" || item.feature === activeFilter
@@ -448,12 +460,14 @@ const Profile: React.FC = () => {
                 onRefresh={handleRefresh}
                 onClearHistory={handleClearHistory}
                 onGetFreeCredits={handleGetFreeCredits}
+                onGoPro={handleGoPro}
             />
             <StatsCard stats={stats} loading={loading} />
             <FilterSection
                 activeFilter={activeFilter}
                 onFilterChange={setActiveFilter}
             />
+            <Text style={styles.historyTitle}>Recent Activity</Text>
         </>
     );
 
@@ -557,25 +571,45 @@ const styles = StyleSheet.create({
         padding: 12,
         marginLeft: 16,
     },
+    buttonGroup: {
+        flexDirection: 'row',
+        marginTop: 16,
+        gap: 8,
+    },
     creditsButton: {
-        backgroundColor: COLORS.primary,
+        flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 16,
-        paddingHorizontal: 20,
-        borderRadius: 16,
-        shadowColor: COLORS.primary,
+        backgroundColor: COLORS.secondary,
+        paddingVertical: 12,
+        borderRadius: 12,
+        shadowColor: COLORS.secondary,
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
-        elevation: 4,
+        shadowOpacity: 0.3,
+        shadowRadius: 5,
+        elevation: 6,
+        gap: 8,
+    },
+    proButton: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: COLORS.accent,
+        paddingVertical: 12,
+        borderRadius: 12,
+        shadowColor: COLORS.accent,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 5,
+        elevation: 6,
+        gap: 8,
     },
     creditsButtonText: {
         color: COLORS.text.white,
-        fontSize: 16,
+        fontSize: 14,
         fontWeight: '600',
-        marginHorizontal: 8,
     },
     statsCard: {
         backgroundColor: COLORS.cardBackground,
@@ -781,6 +815,13 @@ const styles = StyleSheet.create({
         color: COLORS.text.secondary,
         textAlign: 'center',
         lineHeight: 24,
+    },
+    historyTitle: {
+        fontSize: 20,
+        fontWeight: '700',
+        color: COLORS.text.primary,
+        marginBottom: 20,
+        textAlign: 'center',
     },
 });
 
