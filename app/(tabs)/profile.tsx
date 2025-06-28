@@ -1,4 +1,5 @@
 import { usePurchases } from '@/providers/PurchasesProvider';
+import { useThemeContext } from '@/providers/ThemeProvider';
 import {
     addCredits,
     getAllHistory,
@@ -22,6 +23,25 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+
+// Dynamic color scheme based on theme
+const getColors = (isDark: boolean) => ({
+    primary: '#667eea',
+    secondary: '#4338ca',
+    accentColor: '#feca57',
+    dangerColor: '#ff6b6b',
+    backgroundColor: isDark ? '#151718' : '#f8f9fa',
+    cardColor: isDark ? '#1e1e1e' : '#ffffff',
+    headerBackground: isDark ? '#1a1a1a' : '#f7f8fa',
+    borderColor: isDark ? '#333333' : '#f0f0f0',
+    iconColor: isDark ? '#9BA1A6' : '#888',
+    textColor: {
+        primary: isDark ? '#ECEDEE' : '#1a1a1a',
+        secondary: isDark ? '#9BA1A6' : '#666',
+        light: isDark ? '#687076' : '#aaa',
+        white: '#ffffff',
+    },
+});
 
 // Constants
 const FILTER_OPTIONS = [
@@ -52,25 +72,6 @@ const FEATURE_COLORS: Record<string, string> = {
     'default': '#888'
 };
 
-const COLORS = {
-    primary: '#667eea',
-    secondary: '#4338ca',
-    accent: '#feca57',
-    success: '#43e97b',
-    danger: '#ff6b6b',
-    background: '#f8f9fa',
-    cardBackground: '#ffffff',
-    headerBackground: '#f7f8fa',
-    text: {
-        primary: '#1a1a1a',
-        secondary: '#666',
-        tertiary: '#888',
-        light: '#aaa',
-        white: '#ffffff'
-    },
-    border: '#f0f0f0'
-};
-
 // Types
 interface HistoryItem {
     id: number;
@@ -94,16 +95,20 @@ interface ProfileHeaderProps {
     onClearHistory: () => void;
     onGetFreeCredits: () => void;
     onGoPro: () => void;
+    onToggleTheme: () => void;
+    isDark: boolean;
 }
 
 interface StatsCardProps {
     stats: Stats;
     loading: boolean;
+    colors: ReturnType<typeof getColors>;
 }
 
 interface FilterSectionProps {
     activeFilter: string;
     onFilterChange: (filter: string) => void;
+    colors: ReturnType<typeof getColors>;
 }
 
 // Helper Functions
@@ -132,92 +137,109 @@ const ProfileHeader: React.FC<ProfileHeaderProps> = ({
     onClearHistory,
     onGetFreeCredits,
     onGoPro,
-}) => (
-    <View style={styles.profileHeader}>
-        <View style={styles.headerContent}>
-            <View style={styles.userSection}>
-                <View style={styles.avatar}>
-                    <Ionicons name="person-circle" size={64} color={COLORS.primary} />
-                </View>
-                <View style={styles.userInfo}>
-                    <Text style={styles.welcomeText}>Welcome Back!</Text>
-                    <Text style={styles.subtitleText}>Your AI Study Journey</Text>
-                    
-                    <View style={styles.creditsContainer}>
-                        <View style={styles.creditsInfo}>
-                            <Ionicons name="diamond" size={18} color={COLORS.accent} />
-                            <Text style={styles.creditsLabel}>Credits: </Text>
-                            <Text style={styles.creditsValue}>
-                                {loading ? '...' : credits.toLocaleString()}
-                            </Text>
-                        </View>
-                        <TouchableOpacity 
-                            onPress={onRefresh} 
-                            style={styles.refreshButton}
-                            disabled={loading}
-                        >
-                            <Ionicons 
-                                name="refresh" 
-                                size={16} 
-                                color={loading ? COLORS.text.light : COLORS.primary} 
-                            />
-                        </TouchableOpacity>
+    onToggleTheme,
+    isDark,
+}) => {
+    const colors = getColors(isDark);
+    
+    return (
+        <View style={[styles.profileHeader, { backgroundColor: colors.headerBackground }]}>
+            <View style={styles.headerContent}>
+                <View style={styles.userSection}>
+                    <View style={styles.avatar}>
+                        <Ionicons name="person-circle" size={64} color={colors.accentColor} />
                     </View>
+                    <View style={styles.userInfo}>
+                        <Text style={[styles.welcomeText, { color: colors.textColor.primary }]}>Welcome Back!</Text>
+                        <Text style={[styles.subtitleText, { color: colors.textColor.secondary }]}>Your AI Study Journey</Text>
+                        
+                        <View style={styles.creditsContainer}>
+                            <View style={styles.creditsInfo}>
+                                <Ionicons name="diamond" size={18} color={colors.accentColor} />
+                                <Text style={[styles.creditsLabel, { color: colors.textColor.secondary }]}>Credits: </Text>
+                                <Text style={[styles.creditsValue, { color: colors.accentColor }]}>
+                                    {loading ? '...' : credits.toLocaleString()}
+                                </Text>
+                            </View>
+                            <TouchableOpacity 
+                                onPress={onRefresh} 
+                                style={[styles.refreshButton, { backgroundColor: 'rgba(102, 126, 234, 0.1)' }]}
+                                disabled={loading}
+                            >
+                                <Ionicons 
+                                    name="refresh" 
+                                    size={16} 
+                                    color={loading ? colors.textColor.light : colors.accentColor} 
+                                />
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+                
+                <View style={styles.headerActions}>
+                    <TouchableOpacity 
+                        style={[styles.themeButton, { backgroundColor: 'rgba(102, 126, 234, 0.1)' }]} 
+                        onPress={onToggleTheme}
+                    >
+                        <Ionicons 
+                            name={isDark ? "sunny-outline" : "moon-outline"} 
+                            size={20} 
+                            color={colors.accentColor} 
+                        />
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                        style={[styles.clearButton, { backgroundColor: 'rgba(255, 107, 107, 0.1)' }]} 
+                        onPress={onClearHistory}
+                    >
+                        <Ionicons name="trash-outline" size={20} color={colors.dangerColor} />
+                    </TouchableOpacity>
                 </View>
             </View>
             
-            <TouchableOpacity 
-                style={styles.clearButton} 
-                onPress={onClearHistory}
-            >
-                <Ionicons name="trash-outline" size={20} color={COLORS.danger} />
-            </TouchableOpacity>
+            <View style={styles.buttonGroup}>
+                <TouchableOpacity
+                    style={[styles.proButton, { backgroundColor: colors.accentColor }]}
+                    onPress={onGoPro}
+                >
+                    <Ionicons name="rocket" size={20} color={colors.textColor.white} />
+                    <Text style={[styles.creditsButtonText, { color: colors.textColor.white }]}>Go PRO</Text>
+                </TouchableOpacity>
+            </View>
         </View>
-        
-        <View style={styles.buttonGroup}>
+    );
+};
 
-            <TouchableOpacity
-                style={styles.proButton}
-                onPress={onGoPro}
-                // disabled={true}
-            >
-                <Ionicons name="rocket" size={20} color={COLORS.text.white} />
-                <Text style={styles.creditsButtonText}>Go PRO</Text>
-            </TouchableOpacity>
-        </View>
-    </View>
-);
-
-const StatsCard: React.FC<StatsCardProps> = ({ stats, loading }) => (
-    <View style={styles.statsCard}>
-        <Text style={styles.sectionTitle}>Your Progress</Text>
+const StatsCard: React.FC<StatsCardProps> = ({ stats, loading, colors }) => (
+    <View style={[styles.statsCard, { backgroundColor: colors.cardColor, borderColor: colors.borderColor }]}>
+        <Text style={[styles.sectionTitle, { color: colors.textColor.primary }]}>Your Progress</Text>
         <View style={styles.statsGrid}>
             <View style={styles.statItem}>
-                <Text style={styles.statNumber}>
+                <Text style={[styles.statNumber, { color: colors.accentColor }]}>
                     {loading ? '...' : stats.problemsSolved}
                 </Text>
-                <Text style={styles.statLabel}>Problems Solved</Text>
+                <Text style={[styles.statLabel, { color: colors.textColor.secondary }]}>Problems Solved</Text>
             </View>
-            <View style={styles.statDivider} />
+            <View style={[styles.statDivider, { backgroundColor: colors.borderColor }]} />
             <View style={styles.statItem}>
-                <Text style={styles.statNumber}>
+                <Text style={[styles.statNumber, { color: colors.accentColor }]}>
                     {loading ? '...' : stats.daysActive}
                 </Text>
-                <Text style={styles.statLabel}>Days Active</Text>
+                <Text style={[styles.statLabel, { color: colors.textColor.secondary }]}>Days Active</Text>
             </View>
-            <View style={styles.statDivider} />
+            <View style={[styles.statDivider, { backgroundColor: colors.borderColor }]} />
             <View style={styles.statItem}>
-                <Text style={styles.statNumber}>
+                <Text style={[styles.statNumber, { color: colors.accentColor }]}>
                     {loading ? '...' : stats.notesCreated}
                 </Text>
-                <Text style={styles.statLabel}>Notes Created</Text>
+                <Text style={[styles.statLabel, { color: colors.textColor.secondary }]}>Notes Created</Text>
             </View>
         </View>
     </View>
 );
 
-const FilterSection: React.FC<FilterSectionProps> = ({ activeFilter, onFilterChange }) => (
-    <View style={styles.filterSection}>
+const FilterSection: React.FC<FilterSectionProps> = ({ activeFilter, onFilterChange, colors }) => (
+    <View style={[styles.filterSection, { backgroundColor: colors.headerBackground }]}>
         <ScrollView 
             horizontal 
             showsHorizontalScrollIndicator={false}
@@ -228,7 +250,8 @@ const FilterSection: React.FC<FilterSectionProps> = ({ activeFilter, onFilterCha
                     key={filter}
                     style={[
                         styles.filterChip,
-                        activeFilter === filter && styles.activeFilterChip,
+                        { backgroundColor: 'rgba(102, 126, 234, 0.1)', borderColor: 'rgba(102, 126, 234, 0.2)' },
+                        activeFilter === filter && { backgroundColor: colors.accentColor, borderColor: colors.accentColor },
                     ]}
                     onPress={() => onFilterChange(filter)}
                     activeOpacity={0.7}
@@ -236,7 +259,8 @@ const FilterSection: React.FC<FilterSectionProps> = ({ activeFilter, onFilterCha
                     <Text
                         style={[
                             styles.filterChipText,
-                            activeFilter === filter && styles.activeFilterChipText,
+                            { color: colors.textColor.secondary },
+                            activeFilter === filter && { color: colors.textColor.white },
                         ]}
                     >
                         {formatFeatureName(filter)}
@@ -251,12 +275,13 @@ const HistoryCard: React.FC<{
     item: HistoryItem;
     isExpanded: boolean;
     onToggleExpand: () => void;
-}> = ({ item, isExpanded, onToggleExpand }) => {
+    colors: ReturnType<typeof getColors>;
+}> = ({ item, isExpanded, onToggleExpand, colors }) => {
     const isNote = item.feature === "notes" || item.feature === "notes-updated";
     
     return (
         <TouchableOpacity
-            style={styles.historyCard}
+            style={[styles.historyCard, { backgroundColor: colors.cardColor, borderColor: colors.borderColor }]}
             onPress={onToggleExpand}
             activeOpacity={0.95}
         >
@@ -264,11 +289,11 @@ const HistoryCard: React.FC<{
                 {item.imageUri ? (
                     <Image source={{ uri: item.imageUri }} style={styles.cardImage} />
                 ) : (
-                    <View style={styles.imagePlaceholder}>
+                    <View style={[styles.imagePlaceholder, { backgroundColor: colors.backgroundColor, borderColor: colors.borderColor }]}>
                         <Ionicons
                             name={isNote ? "document-text" : "image"}
                             size={24}
-                            color={COLORS.text.light}
+                            color={colors.textColor.light}
                         />
                     </View>
                 )}
@@ -287,12 +312,12 @@ const HistoryCard: React.FC<{
                                 {formatFeatureName(item.feature)}
                             </Text>
                         </View>
-                        <Text style={styles.timestamp}>{formatDate(item.createdAt)}</Text>
+                        <Text style={[styles.timestamp, { color: colors.textColor.light }]}>{formatDate(item.createdAt)}</Text>
                     </View>
                     
                     <Text
                         numberOfLines={isExpanded ? undefined : 2}
-                        style={[styles.cardText, isNote && styles.noteTitle]}
+                        style={[styles.cardText, { color: colors.textColor.primary }, isNote && styles.noteTitle]}
                     >
                         {isNote ? item.extractedText : item.aiAnswer}
                     </Text>
@@ -301,22 +326,22 @@ const HistoryCard: React.FC<{
                 <Ionicons
                     name={isExpanded ? "chevron-up" : "chevron-down"}
                     size={20}
-                    color={COLORS.text.light}
+                    color={colors.textColor.light}
                     style={styles.expandIcon}
                 />
             </View>
             
             {isExpanded && (
-                <View style={styles.expandedContent}>
-                    <View style={styles.expandedSection}>
-                        <Text style={styles.expandedLabel}>
+                <View style={[styles.expandedContent, { borderTopColor: colors.borderColor }]}>
+                    <View style={[styles.expandedSection, { backgroundColor: colors.backgroundColor }]}>
+                        <Text style={[styles.expandedLabel, { color: colors.accentColor }]}>
                             {isNote ? "Note Content:" : "Extracted Text:"}
                         </Text>
                         <ScrollView 
                             style={styles.expandedScrollView}
                             showsVerticalScrollIndicator={false}
                         >
-                            <Text style={styles.expandedText}>
+                            <Text style={[styles.expandedText, { color: colors.textColor.secondary }]}>
                                 {isNote ? item.aiAnswer : item.extractedText}
                             </Text>
                         </ScrollView>
@@ -327,13 +352,13 @@ const HistoryCard: React.FC<{
     );
 };
 
-const EmptyState: React.FC = () => (
+const EmptyState: React.FC<{ colors: ReturnType<typeof getColors> }> = ({ colors }) => (
     <View style={styles.emptyState}>
-        <View style={styles.emptyIconContainer}>
-            <Ionicons name="document-text-outline" size={64} color={COLORS.text.light} />
+        <View style={[styles.emptyIconContainer, { backgroundColor: colors.backgroundColor, borderColor: colors.borderColor }]}>
+            <Ionicons name="document-text-outline" size={64} color={colors.textColor.light} />
         </View>
-        <Text style={styles.emptyTitle}>No History Yet</Text>
-        <Text style={styles.emptySubtitle}>
+        <Text style={[styles.emptyTitle, { color: colors.textColor.primary }]}>No History Yet</Text>
+        <Text style={[styles.emptySubtitle, { color: colors.textColor.secondary }]}>
             Start scanning documents or creating notes to see your AI study history here!
         </Text>
     </View>
@@ -354,6 +379,10 @@ const Profile: React.FC = () => {
     });
     const { isPro } = usePurchases();
     const router = useRouter();
+    
+    // Theme context
+    const { resolvedTheme, toggleTheme } = useThemeContext();
+    const COLORS = getColors(resolvedTheme === 'dark');
 
     const loadData = useCallback(async () => {
         try {
@@ -449,6 +478,7 @@ const Profile: React.FC = () => {
             item={item}
             isExpanded={expandedItem === item.id}
             onToggleExpand={() => handleToggleExpand(item.id)}
+            colors={COLORS}
         />
     );
 
@@ -461,31 +491,35 @@ const Profile: React.FC = () => {
                 onClearHistory={handleClearHistory}
                 onGetFreeCredits={handleGetFreeCredits}
                 onGoPro={handleGoPro}
+                onToggleTheme={toggleTheme}
+                isDark={resolvedTheme === 'dark'}
             />
-            <StatsCard stats={stats} loading={loading} />
+            <StatsCard stats={stats} loading={loading} colors={COLORS} />
             <FilterSection
                 activeFilter={activeFilter}
                 onFilterChange={setActiveFilter}
+                colors={COLORS}
             />
-            <Text style={styles.historyTitle}>Recent Activity</Text>
+            <Text style={[styles.historyTitle, { color: COLORS.textColor.primary }]}>Recent Activity</Text>
         </>
     );
 
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, { backgroundColor: COLORS.backgroundColor }]}>
+            <View style={{ height: 24 }} />
             <FlatList
                 data={filteredHistory}
                 keyExtractor={(item) => item.id.toString()}
                 renderItem={renderHistoryItem}
                 ListHeaderComponent={ListHeaderComponent}
-                ListEmptyComponent={!loading ? <EmptyState /> : null}
+                ListEmptyComponent={!loading ? <EmptyState colors={COLORS} /> : null}
                 contentContainerStyle={styles.listContent}
                 refreshControl={
                     <RefreshControl
                         refreshing={refreshing}
                         onRefresh={handleRefresh}
-                        colors={[COLORS.primary]}
-                        tintColor={COLORS.primary}
+                        colors={[COLORS.accentColor]}
+                        tintColor={COLORS.accentColor}
                     />
                 }
                 showsVerticalScrollIndicator={false}
@@ -498,13 +532,11 @@ const Profile: React.FC = () => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: COLORS.background,
     },
     listContent: {
         paddingBottom: 20,
     },
     profileHeader: {
-        backgroundColor: COLORS.headerBackground,
         paddingTop: Platform.OS === 'ios' ? 60 : 50,
         paddingHorizontal: 20,
         paddingBottom: 20,
@@ -520,7 +552,6 @@ const styles = StyleSheet.create({
     },
     avatar: {
         marginRight: 16,
-        shadowColor: COLORS.primary,
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
         shadowRadius: 4,
@@ -531,12 +562,10 @@ const styles = StyleSheet.create({
     welcomeText: {
         fontSize: 22,
         fontWeight: '700',
-        color: COLORS.text.primary,
         marginBottom: 2,
     },
     subtitleText: {
         fontSize: 14,
-        color: COLORS.text.secondary,
         marginBottom: 12,
     },
     creditsContainer: {
@@ -550,26 +579,30 @@ const styles = StyleSheet.create({
     },
     creditsLabel: {
         fontSize: 15,
-        color: COLORS.text.secondary,
         marginLeft: 6,
         fontWeight: '500',
     },
     creditsValue: {
         fontSize: 18,
         fontWeight: '700',
-        color: COLORS.accent,
         marginLeft: 4,
+    },
+    headerActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    themeButton: {
+        borderRadius: 16,
+        padding: 12,
     },
     refreshButton: {
         padding: 8,
         borderRadius: 12,
-        backgroundColor: 'rgba(102, 126, 234, 0.1)',
     },
     clearButton: {
-        backgroundColor: 'rgba(255, 107, 107, 0.1)',
         borderRadius: 16,
         padding: 12,
-        marginLeft: 16,
     },
     buttonGroup: {
         flexDirection: 'row',
@@ -581,10 +614,8 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: COLORS.secondary,
         paddingVertical: 12,
         borderRadius: 12,
-        shadowColor: COLORS.secondary,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 5,
@@ -596,10 +627,8 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: COLORS.accent,
         paddingVertical: 12,
         borderRadius: 12,
-        shadowColor: COLORS.accent,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 5,
@@ -607,12 +636,10 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     creditsButtonText: {
-        color: COLORS.text.white,
         fontSize: 14,
         fontWeight: '600',
     },
     statsCard: {
-        backgroundColor: COLORS.cardBackground,
         borderRadius: 20,
         padding: 24,
         marginHorizontal: 20,
@@ -623,12 +650,10 @@ const styles = StyleSheet.create({
         shadowRadius: 8,
         elevation: 3,
         borderWidth: 1,
-        borderColor: COLORS.border,
     },
     sectionTitle: {
         fontSize: 20,
         fontWeight: '700',
-        color: COLORS.text.primary,
         marginBottom: 20,
         textAlign: 'center',
     },
@@ -644,23 +669,19 @@ const styles = StyleSheet.create({
     statNumber: {
         fontSize: 28,
         fontWeight: '800',
-        color: COLORS.primary,
         marginBottom: 4,
     },
     statLabel: {
         fontSize: 12,
-        color: COLORS.text.secondary,
         textAlign: 'center',
         fontWeight: '500',
     },
     statDivider: {
         width: 1,
         height: 40,
-        backgroundColor: COLORS.border,
     },
     filterSection: {
         paddingVertical: 16,
-        backgroundColor: COLORS.headerBackground,
         marginBottom: 8,
     },
     filterScrollContent: {
@@ -670,25 +691,14 @@ const styles = StyleSheet.create({
         paddingVertical: 10,
         paddingHorizontal: 16,
         borderRadius: 20,
-        backgroundColor: 'rgba(102, 126, 234, 0.1)',
         marginRight: 12,
         borderWidth: 1,
-        borderColor: 'rgba(102, 126, 234, 0.2)',
-    },
-    activeFilterChip: {
-        backgroundColor: COLORS.primary,
-        borderColor: COLORS.primary,
     },
     filterChipText: {
-        color: COLORS.secondary,
         fontWeight: '600',
         fontSize: 14,
     },
-    activeFilterChipText: {
-        color: COLORS.text.white,
-    },
     historyCard: {
-        backgroundColor: COLORS.cardBackground,
         borderRadius: 16,
         marginHorizontal: 20,
         marginBottom: 12,
@@ -698,7 +708,6 @@ const styles = StyleSheet.create({
         shadowRadius: 8,
         elevation: 2,
         borderWidth: 1,
-        borderColor: COLORS.border,
     },
     cardHeader: {
         flexDirection: 'row',
@@ -710,18 +719,16 @@ const styles = StyleSheet.create({
         height: 56,
         borderRadius: 12,
         marginRight: 16,
-        backgroundColor: COLORS.border,
     },
     imagePlaceholder: {
         width: 56,
         height: 56,
         borderRadius: 12,
         marginRight: 16,
-        backgroundColor: COLORS.background,
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 1,
-        borderColor: COLORS.border,
+        borderStyle: 'dashed',
     },
     cardContent: {
         flex: 1,
@@ -738,18 +745,16 @@ const styles = StyleSheet.create({
         marginRight: 12,
     },
     featureBadgeText: {
-        color: COLORS.text.white,
+        color: '#ffffff',
         fontWeight: '600',
         fontSize: 11,
     },
     timestamp: {
-        color: COLORS.text.light,
         fontSize: 12,
         marginLeft: 'auto',
         fontWeight: '500',
     },
     cardText: {
-        color: COLORS.text.primary,
         fontSize: 15,
         lineHeight: 22,
     },
@@ -762,18 +767,15 @@ const styles = StyleSheet.create({
     },
     expandedContent: {
         borderTopWidth: 1,
-        borderTopColor: COLORS.border,
         paddingHorizontal: 16,
         paddingVertical: 12,
     },
     expandedSection: {
-        backgroundColor: COLORS.background,
         borderRadius: 12,
         padding: 16,
     },
     expandedLabel: {
         fontWeight: '600',
-        color: COLORS.primary,
         fontSize: 14,
         marginBottom: 8,
     },
@@ -781,7 +783,6 @@ const styles = StyleSheet.create({
         maxHeight: 120,
     },
     expandedText: {
-        color: COLORS.text.secondary,
         fontSize: 14,
         lineHeight: 20,
     },
@@ -795,31 +796,26 @@ const styles = StyleSheet.create({
         width: 120,
         height: 120,
         borderRadius: 60,
-        backgroundColor: COLORS.background,
         alignItems: 'center',
         justifyContent: 'center',
         marginBottom: 24,
         borderWidth: 2,
-        borderColor: COLORS.border,
         borderStyle: 'dashed',
     },
     emptyTitle: {
         fontSize: 20,
         fontWeight: '600',
-        color: COLORS.text.primary,
         marginBottom: 8,
         textAlign: 'center',
     },
     emptySubtitle: {
         fontSize: 16,
-        color: COLORS.text.secondary,
         textAlign: 'center',
         lineHeight: 24,
     },
     historyTitle: {
         fontSize: 20,
         fontWeight: '700',
-        color: COLORS.text.primary,
         marginBottom: 20,
         textAlign: 'center',
     },

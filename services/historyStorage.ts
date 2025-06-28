@@ -529,7 +529,6 @@ export interface FlashCardSet {
     title: string;
     content: string;
     card_type: string;
-    number_of_cards: number;
     source_note_id?: number;
     source_note_type?: string;
     createdAt: string;
@@ -538,7 +537,7 @@ export interface FlashCardSet {
 export const initFlashCardSetTable = async () => {
     const localDb = await getDb();
     await localDb.execAsync(
-      "CREATE TABLE IF NOT EXISTS flash_card_sets (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, content TEXT, card_type TEXT, number_of_cards INTEGER, source_note_id INTEGER, source_note_type TEXT, createdAt TEXT);"
+      "CREATE TABLE IF NOT EXISTS flash_card_sets (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, content TEXT, card_type TEXT, source_note_id INTEGER, source_note_type TEXT, createdAt TEXT);"
     );
 };
 
@@ -546,14 +545,13 @@ export const addFlashCardSet = async (
   title: string, 
   content: string,
   cardType: string,
-  numberOfCards: number,
   sourceNoteId?: number,
   sourceNoteType?: 'note' | 'scan-note'
 ): Promise<number> => {
     const localDb = await getDb();
     const result = await localDb.runAsync(
-      "INSERT INTO flash_card_sets (title, content, card_type, number_of_cards, source_note_id, source_note_type, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?);",
-      [title, content, cardType, numberOfCards, sourceNoteId ?? null, sourceNoteType ?? null, new Date().toISOString()]
+      "INSERT INTO flash_card_sets (title, content, card_type, source_note_id, source_note_type, createdAt) VALUES (?, ?, ?, ?, ?, ?);",
+      [title, content, cardType, sourceNoteId ?? null, sourceNoteType ?? null, new Date().toISOString()]
     );
     return result.lastInsertRowId;
 };

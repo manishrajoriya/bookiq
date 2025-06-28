@@ -24,9 +24,12 @@ import {
   View
 } from 'react-native';
 import AppendScanModal from '../components/AppendScanModal';
+import FlashCardGenerationModal from '../components/FlashCardGenerationModal';
 import NoteReaderModal from '../components/NoteReaderModal';
-import { generateQuizFromNotes, processImage } from '../services/geminiServices';
-import { addHistory, addQuiz, addScanNote, deleteScanNote, getAllScanNotes, spendCredits, updateScanNote } from '../services/historyStorage';
+import QuizGenerationModal from '../components/QuizGenerationModal';
+import { useThemeColor } from '../hooks/useThemeColor';
+import { processImage } from '../services/geminiServices';
+import { addHistory, addScanNote, deleteScanNote, getAllScanNotes, spendCredits, updateScanNote } from '../services/historyStorage';
 
 const { width, height } = Dimensions.get('window');
 
@@ -61,8 +64,6 @@ interface ImageScanResult {
   confidence?: number;
   error?: string;
 }
-
-type QuizType = 'multiple-choice' | 'true-false' | 'fill-blank';
 
 const StudyNotes = () => {
   const router = useRouter();
@@ -108,12 +109,21 @@ const StudyNotes = () => {
   const [appendModalVisible, setAppendModalVisible] = useState(false);
   const [noteToAppend, setNoteToAppend] = useState<ScanNote | null>(null);
 
-  // Quiz generation state
+  // Quiz generation modal state
   const [quizModalVisible, setQuizModalVisible] = useState(false);
-  const [generatedQuiz, setGeneratedQuiz] = useState<string>('');
-  const [selectedQuizType, setSelectedQuizType] = useState<QuizType>('multiple-choice');
-  const [numberOfQuestions, setNumberOfQuestions] = useState<number>(5);
-  const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
+
+  // Flash card generation modal state
+  const [flashCardModalVisible, setFlashCardModalVisible] = useState(false);
+
+  // Flash card viewer modal state
+  const [viewerModalVisible, setViewerModalVisible] = useState(false);
+
+  // Theme colors
+  const backgroundColor = useThemeColor({}, 'background');
+  const textColor = useThemeColor({}, 'text');
+  const cardColor = useThemeColor({}, 'background');
+  const borderColor = useThemeColor({}, 'icon');
+  const iconColor = useThemeColor({}, 'icon');
 
   // Enhanced error handling
   const handleError = (type: ErrorState['type'], message: string, retryable: boolean = true, code?: string) => {
@@ -485,88 +495,62 @@ const StudyNotes = () => {
   const openQuizModal = (note: ScanNote) => {
     setSelectedNote(note);
     setQuizModalVisible(true);
-    setGeneratedQuiz('');
   };
 
   const closeQuizModal = () => {
-    if (isGeneratingQuiz) {
-      Alert.alert(
-        'Generation in Progress',
-        'Please wait for the quiz generation to complete.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
     setQuizModalVisible(false);
     setSelectedNote(null);
-    setGeneratedQuiz('');
   };
 
-  const generateQuiz = async () => {
-    if (!selectedNote) return;
-
-    try {
-      setIsGeneratingQuiz(true);
-      const hasEnoughCredits = await spendCredits(2);
-      if (!hasEnoughCredits) {
-        Alert.alert(
-            "Out of Credits",
-            "You need at least 2 credits to generate a quiz.",
-            [
-                { text: "Cancel", style: "cancel" },
-                { text: "Get Credits", onPress: () => router.push('/paywall') }
-            ]
-        );
-        setIsGeneratingQuiz(false);
-        return;
-      }
-
-      const quiz = await generateQuizFromNotes(
-        selectedNote.content,
-        selectedQuizType,
-        numberOfQuestions
-      );
-
-      setGeneratedQuiz(quiz);
-
-    } catch (error) {
-      console.error('Quiz generation error:', error);
-      Alert.alert('Error', 'Failed to generate quiz. Please try again.');
-    } finally {
-      setIsGeneratingQuiz(false);
-    }
+  const handleQuizSaved = () => {
+    // Refresh notes if needed
+    loadNotes();
   };
 
-  const saveGeneratedQuiz = async () => {
-    if (!generatedQuiz || !selectedNote) return;
+  // Flash card generation handlers
+  const openFlashCardModal = (note: ScanNote) => {
+    setSelectedNote(note);
+    setFlashCardModalVisible(true);
+  };
 
-    try {
-      const quizTitle = `${selectedNote.title} - ${selectedQuizType.replace('-', ' ')} Quiz`;
-      
-      await addQuiz(
-        quizTitle,
-        generatedQuiz,
-        selectedQuizType,
-        numberOfQuestions,
-        selectedNote.id,
-        'scan-note'
-      );
+  const closeFlashCardModal = () => {
+    setFlashCardModalVisible(false);
+    setSelectedNote(null);
+  };
 
-      Alert.alert(
-        'Success!', 
-        'Quiz has been saved successfully.',
-        [{ text: 'OK' }]
-      );
-      
-      closeQuizModal();
-    } catch (error) {
-      console.error('Failed to save quiz:', error);
-      Alert.alert('Error', 'Failed to save quiz. Please try again.');
-    }
+  const handleFlashCardSaved = () => {
+    // Refresh notes if needed
+    loadNotes();
+  };
+
+  // Flash card viewer handlers
+  const openFlashCardViewer = (note: ScanNote) => {
+    setSelectedNote(note);
+    setViewerModalVisible(true);
+  };
+
+  const closeFlashCardViewer = () => {
+    setViewerModalVisible(false);
+    setSelectedNote(null);
+  };
+
+  // Parse flash cards from note content
+  const parseFlashCards = (content: string): { front: string; back: string }[] => {
+    return content
+      .split('---')
+      .map(cardBlock => {
+        const frontMatch = cardBlock.match(/FRONT:\s*(.*)/);
+        const backMatch = cardBlock.match(/BACK:\s*(.*)/);
+        if (frontMatch && backMatch) {
+          return { front: frontMatch[1].trim(), back: backMatch[1].trim() };
+        }
+        return null;
+      })
+      .filter(Boolean) as { front: string; back: string }[];
   };
 
   const renderNoteItem = ({ item }: { item: ScanNote }) => (
-    <View style={styles.noteCardContainer}>
+    <View style={[styles.noteCardContainer, { backgroundColor: cardColor, borderColor }]}>
       <TouchableOpacity 
         onPress={() => openNotePreview(item)}
         activeOpacity={0.8}
@@ -574,24 +558,24 @@ const StudyNotes = () => {
       >
         <View style={styles.noteCardContent}>
           <View style={styles.noteHeader}>
-            <Text style={styles.noteTitle} numberOfLines={1} ellipsizeMode="tail">
+            <Text style={[styles.noteTitle, { color: textColor }]} numberOfLines={1} ellipsizeMode="tail">
               {item.title}
             </Text>
             <View style={styles.noteMetadata}>
-              <Text style={styles.wordCount}>{item.wordCount} words</Text>
+              <Text style={[styles.wordCount, { color: iconColor }]}>{item.wordCount} words</Text>
             </View>
           </View>
           
           <Text 
             numberOfLines={3} 
-            style={styles.noteContent}
+            style={[styles.noteContent, { color: iconColor }]}
             ellipsizeMode="tail"
           >
             {item.content}
           </Text>
           
           <View style={styles.noteFooter}>
-            <Text style={styles.noteDate}>
+            <Text style={[styles.noteDate, { color: iconColor }]}>
               {new Date(item.createdAt).toLocaleDateString('en-US', {
                 month: 'short',
                 day: 'numeric',
@@ -601,8 +585,8 @@ const StudyNotes = () => {
             </Text>
             <View style={styles.noteActions}>
               {item.imageUri && (
-                <View style={styles.imageIndicator}>
-                  <Ionicons name="image" size={14} color="#6366f1" />
+                <View style={[styles.imageIndicator, { backgroundColor: cardColor }]}>
+                  <Ionicons name="image" size={14} color={iconColor} />
                 </View>
               )}
               <TouchableOpacity 
@@ -612,7 +596,7 @@ const StudyNotes = () => {
                   router.push(`/note/${item.id}` as any);
                 }}
               >
-                <Ionicons name="create-outline" size={16} color="#6366f1" />
+                <Ionicons name="create-outline" size={16} color={iconColor} />
               </TouchableOpacity>
               <TouchableOpacity 
                 style={styles.deleteButton}
@@ -636,7 +620,25 @@ const StudyNotes = () => {
                   openQuizModal(item);
                 }}
               >
-                <Ionicons name="help-circle-outline" size={16} color="#f093fb" />
+                <Ionicons name="help-circle-outline" size={16} color={iconColor} />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.flashCardButton}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  openFlashCardModal(item);
+                }}
+              >
+                <Ionicons name="albums-outline" size={16} color={iconColor} />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.practiceButton}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  openFlashCardViewer(item);
+                }}
+              >
+                <Ionicons name="play-outline" size={16} color="#10b981" />
               </TouchableOpacity>
             </View>
           </View>
@@ -751,8 +753,8 @@ const StudyNotes = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+    <SafeAreaView style={[styles.container, { backgroundColor }]}>
+      <StatusBar barStyle={backgroundColor === '#fff' ? 'dark-content' : 'light-content'} backgroundColor={backgroundColor} />
       
       {/* Header with animated shadow */}
       <Animated.View style={[
@@ -1069,130 +1071,27 @@ const StudyNotes = () => {
         noteTitle={noteToAppend?.title || ''}
       />
 
-      {/* Quiz Modal */}
-      <Modal
+      {/* Quiz Generation Modal */}
+      <QuizGenerationModal
         visible={quizModalVisible}
-        animationType="slide"
-        transparent={false}
-        onRequestClose={closeQuizModal}
-      >
-        <SafeAreaView style={styles.modalSafeAreView}>
-          <View style={styles.modalContainer}>
-            {/* Modal Header */}
-            <View style={styles.modalHeader}>
-              <View style={styles.modalTitleContainer}>
-                <Text style={styles.modalTitle}>Generate Quiz</Text>
-                <TouchableOpacity 
-                  onPress={closeQuizModal}
-                  style={styles.closeButton}
-                >
-                  <Ionicons name="close" size={24} color="#6b7280" />
-                </TouchableOpacity>
-              </View>
-              {selectedNote && (
-                <Text style={styles.selectedNoteTitle}>
-                  From: {selectedNote.title}
-                </Text>
-              )}
-            </View>
+        onClose={closeQuizModal}
+        sourceContent={selectedNote?.content || ''}
+        sourceTitle={selectedNote?.title || ''}
+        sourceId={selectedNote?.id}
+        sourceType="scan-note"
+        onQuizSaved={handleQuizSaved}
+      />
 
-            <ScrollView 
-              style={styles.modalContent}
-              showsVerticalScrollIndicator={false}
-            >
-              {/* Quiz Settings */}
-              {!generatedQuiz && (
-                <View style={styles.settingsSection}>
-                  <Text style={styles.sectionTitle}>Quiz Settings</Text>
-                  
-                  <View style={styles.settingGroup}>
-                    <Text style={styles.settingLabel}>Quiz Type</Text>
-                    <View style={styles.quizTypeButtons}>
-                      {(['multiple-choice', 'true-false', 'fill-blank'] as QuizType[]).map((type) => (
-                        <TouchableOpacity
-                          key={type}
-                          style={[
-                            styles.quizTypeButton,
-                            selectedQuizType === type && styles.quizTypeButtonActive
-                          ]}
-                          onPress={() => setSelectedQuizType(type)}
-                        >
-                          <Text style={[
-                            styles.quizTypeButtonText,
-                            selectedQuizType === type && styles.quizTypeButtonTextActive
-                          ]}>
-                            {type.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
-
-                  <View style={styles.settingGroup}>
-                    <Text style={styles.settingLabel}>Number of Questions</Text>
-                    <View style={styles.questionCountButtons}>
-                      {[3, 5, 10, 15].map((count) => (
-                        <TouchableOpacity
-                          key={count}
-                          style={[
-                            styles.questionCountButton,
-                            numberOfQuestions === count && styles.questionCountButtonActive
-                          ]}
-                          onPress={() => setNumberOfQuestions(count)}
-                        >
-                          <Text style={[
-                            styles.questionCountButtonText,
-                            numberOfQuestions === count && styles.questionCountButtonTextActive
-                          ]}>
-                            {count}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.generateButton,
-                      isGeneratingQuiz && styles.generateButtonDisabled
-                    ]}
-                    onPress={generateQuiz}
-                    disabled={isGeneratingQuiz}
-                  >
-                    {isGeneratingQuiz ? (
-                      <ActivityIndicator color="white" size="small" />
-                    ) : (
-                      <>
-                        <Ionicons name="sparkles-outline" size={20} color="white" />
-                        <Text style={styles.generateButtonText}>
-                          Generate Quiz (2 Credits)
-                        </Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {/* Generated Quiz */}
-              {generatedQuiz && (
-                <View style={styles.generateQuizSection}>
-                  <Text style={styles.sectionTitle}>Generated Quiz</Text>
-                  <View style={styles.generatedQuizContainer}>
-                    <Text style={styles.generatedQuizText}>{generatedQuiz}</Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.saveButton}
-                    onPress={saveGeneratedQuiz}
-                  >
-                    <Ionicons name="save-outline" size={20} color="white" />
-                    <Text style={styles.saveButtonText}>Save Quiz</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </ScrollView>
-          </View>
-        </SafeAreaView>
-      </Modal>
+      {/* Flash Card Generation Modal */}
+      <FlashCardGenerationModal
+        visible={flashCardModalVisible}
+        onClose={closeFlashCardModal}
+        sourceContent={selectedNote?.content || ''}
+        sourceTitle={selectedNote?.title || ''}
+        sourceId={selectedNote?.id}
+        sourceType="scan-note"
+        onFlashCardSaved={handleFlashCardSaved}
+      />
     </SafeAreaView>
   );
 };
@@ -1728,107 +1627,15 @@ const styles = StyleSheet.create({
     padding: 4,
     marginLeft: 8,
   },
-  settingsSection: {
-    marginVertical: 24,
-  },
-  settingGroup: {
-    marginBottom: 24,
-  },
-  settingLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 12,
-  },
-  quizTypeButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  quizTypeButton: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-  },
-  quizTypeButtonActive: {
-    backgroundColor: '#f093fb',
-    borderColor: '#f093fb',
-  },
-  quizTypeButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#4b5563',
-  },
-  quizTypeButtonTextActive: {
-    color: 'white',
-  },
-  questionCountButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  questionCountButton: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-  },
-  questionCountButtonActive: {
-    backgroundColor: '#f093fb',
-    borderColor: '#f093fb',
-  },
-  questionCountButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#4b5563',
-  },
-  questionCountButtonTextActive: {
-    color: 'white',
-  },
-  generateButton: {
-    backgroundColor: '#f093fb',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    borderRadius: 12,
-    marginTop: 16,
-  },
-  generateButtonDisabled: {
-    backgroundColor: '#9ca3af',
-  },
-  generateButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
+  flashCardButton: {
+    padding: 4,
     marginLeft: 8,
   },
-  generateQuizSection: {
-    marginBottom: 24,
-  },
-  generatedQuizContainer: {
-    backgroundColor: '#f9fafb',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-  },
-  generatedQuizText: {
-    fontSize: 14,
-    color: '#374151',
-    lineHeight: 22,
-  },
-  selectedNoteTitle: {
-    fontSize: 14,
-    color: '#6b7280',
-    fontStyle: 'italic',
+  practiceButton: {
+    padding: 4,
+    marginLeft: 8,
+    backgroundColor: '#f0fff4',
+    borderRadius: 8,
   },
 });
 

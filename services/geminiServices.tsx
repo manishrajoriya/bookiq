@@ -111,7 +111,7 @@ Content:
 "${notesContent}"
 
 Requirements:
-- Generate 8-12 ${quizType} questions (aim for 10 questions)
+- Generate many ${quizType} questions 
 - Make questions challenging but fair
 - Include a mix of difficulty levels
 - For multiple choice: provide 4 options (A, B, C, D) with only one correct answer
@@ -162,7 +162,6 @@ ANSWERS:
 
 export const generateFlashCardsFromNotes = async (
   notesContent: string,
-  numberOfCards: number = 10,
   cardType: 'term-definition' | 'question-answer' = 'term-definition'
 ): Promise<string> => {
   const prompt = `You are an expert flashcard generator. Create a set of flashcards based on the following study notes content.
@@ -171,7 +170,6 @@ Study Notes Content:
 "${notesContent}"
 
 Requirements:
-- Generate ${numberOfCards} flashcards.
 - The flashcard type is ${cardType}.
 - For 'term-definition', provide a key term and its definition.
 - For 'question-answer', provide a question and a concise answer.
@@ -189,7 +187,7 @@ BACK: [Definition/Answer 2]
 
   try {
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${process.env.EXPO_PUBLIC_GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite-preview-02-05:generateContent?key=${process.env.EXPO_PUBLIC_GEMINI_API_KEY}`,
       {
         contents: [{ parts: [{ text: prompt }] }],
       },

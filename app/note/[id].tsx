@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useThemeColor } from '../../hooks/useThemeColor';
 import { addHistory, addNote, getNoteById, getQuizById, getScanNoteById, updateHistoryNote, updateNote, updateQuiz, updateScanNote } from '../../services/historyStorage';
 
 export default function NoteDetailScreen() {
@@ -12,6 +13,13 @@ export default function NoteDetailScreen() {
     const [isScanNote, setIsScanNote] = useState(false);
     const isNew = id === 'new';
     const isQuiz = isQuizParam === 'true';
+
+    // Theme colors
+    const backgroundColor = useThemeColor({}, 'background');
+    const textColor = useThemeColor({}, 'text');
+    const borderColor = useThemeColor({}, 'icon');
+    const iconColor = useThemeColor({}, 'icon');
+    const cardColor = useThemeColor({}, 'background');
 
     useEffect(() => {
         if (!isNew) {
@@ -72,38 +80,40 @@ export default function NoteDetailScreen() {
 
     return (
         <KeyboardAvoidingView 
-            style={styles.container} 
+            style={[styles.container, { backgroundColor }]} 
             behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
-            <View style={styles.header}>
+            <View style={[styles.header, { borderBottomColor: borderColor, backgroundColor }]}>
                 <TouchableOpacity onPress={() => router.back()}>
-                    <Ionicons name="chevron-back" size={28} color="#667eea" />
+                    <Ionicons name="chevron-back" size={28} color={iconColor} />
                 </TouchableOpacity>
                 <View style={styles.headerContent}>
-                    <Text style={styles.headerTitle}>
+                    <Text style={[styles.headerTitle, { color: textColor }]}>
                         {isNew ? 'New Note' : isQuiz ? 'Edit Quiz' : isScanNote ? 'Edit Scan Note' : 'Edit Note'}
                     </Text>
                     {!isNew && isScanNote && (
-                        <View style={styles.scanNoteIndicator}>
-                            <Ionicons name="scan-outline" size={12} color="#6366f1" />
-                            <Text style={styles.scanNoteText}>Scan Note</Text>
+                        <View style={[styles.scanNoteIndicator, { borderColor: iconColor }]}>
+                            <Ionicons name="scan-outline" size={12} color={iconColor} />
+                            <Text style={[styles.scanNoteText, { color: iconColor }]}>Scan Note</Text>
                         </View>
                     )}
                 </View>
-                <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+                <TouchableOpacity style={[styles.saveButton, { backgroundColor: iconColor }]} onPress={handleSave}>
                     <Text style={styles.saveButtonText}>Save</Text>
                 </TouchableOpacity>
             </View>
             <ScrollView contentContainerStyle={styles.scrollContainer}>
                 <TextInput
-                    style={styles.titleInput}
+                    style={[styles.titleInput, { color: textColor, borderBottomColor: borderColor }]}
                     placeholder="Title"
+                    placeholderTextColor={iconColor}
                     value={title}
                     onChangeText={setTitle}
                 />
                 <TextInput
-                    style={styles.contentInput}
+                    style={[styles.contentInput, { color: textColor }]}
                     placeholder={isQuiz ? "Edit your quiz questions and answers here..." : "Start writing your note here..."}
+                    placeholderTextColor={iconColor}
                     value={content}
                     onChangeText={setContent}
                     multiline
@@ -116,7 +126,7 @@ export default function NoteDetailScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: 'white',
+        // backgroundColor: 'white', // replaced by theme
     },
     header: {
         flexDirection: 'row',
@@ -126,7 +136,7 @@ const styles = StyleSheet.create({
         paddingTop: Platform.OS === 'ios' ? 60 : 50,
         paddingBottom: 16,
         borderBottomWidth: 1,
-        borderBottomColor: '#f0f0f0',
+        // borderBottomColor: '#f0f0f0', // replaced by theme
     },
     headerContent: {
         flexDirection: 'row',
@@ -135,6 +145,7 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 20,
         fontWeight: '600',
+        // color replaced by theme
     },
     scanNoteIndicator: {
         flexDirection: 'row',
@@ -142,17 +153,17 @@ const styles = StyleSheet.create({
         marginLeft: 8,
         padding: 4,
         borderWidth: 1,
-        borderColor: '#6366f1',
+        // borderColor: '#6366f1', // replaced by theme
         borderRadius: 4,
     },
     scanNoteText: {
         fontSize: 12,
         fontWeight: 'bold',
-        color: '#6366f1',
+        // color: '#6366f1', // replaced by theme
         marginLeft: 4,
     },
     saveButton: {
-        backgroundColor: '#667eea',
+        // backgroundColor: '#667eea', // replaced by theme
         paddingHorizontal: 16,
         paddingVertical: 8,
         borderRadius: 20,
@@ -170,13 +181,15 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         paddingBottom: 16,
         borderBottomWidth: 1,
-        borderBottomColor: '#f0f0f0',
+        // borderBottomColor: '#f0f0f0', // replaced by theme
         marginBottom: 16,
+        // color replaced by theme
     },
     contentInput: {
         flex: 1,
         fontSize: 18,
         lineHeight: 28,
-        textAlignVertical: 'top'
+        textAlignVertical: 'top',
+        // color replaced by theme
     },
 }); 

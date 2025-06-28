@@ -4,13 +4,21 @@
  */
 
 import { Colors } from '@/constants/Colors';
-import { useColorScheme } from '@/hooks/useColorScheme';
+import { useThemeContext } from '@/providers/ThemeProvider';
 
 export function useThemeColor(
   props: { light?: string; dark?: string },
   colorName: keyof typeof Colors.light & keyof typeof Colors.dark
 ) {
-  const theme = useColorScheme() ?? 'light';
+  let theme: 'light' | 'dark' = 'light';
+  try {
+    // Use global theme context if available
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    theme = useThemeContext().resolvedTheme;
+  } catch {
+    // fallback if not in provider
+    theme = 'light';
+  }
   const colorFromProps = props[theme];
 
   if (colorFromProps) {

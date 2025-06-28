@@ -2,21 +2,22 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Dimensions,
-    Image,
-    Modal,
-    Platform,
-    SafeAreaView,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  Image,
+  Modal,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
+import { useThemeColor } from '../hooks/useThemeColor';
 import { processImage } from '../services/geminiServices';
 import { spendCredits } from '../services/historyStorage';
 
@@ -41,6 +42,13 @@ export default function AppendScanModal({
   const [isProcessing, setIsProcessing] = useState(false);
   const [extractedText, setExtractedText] = useState('');
   const [appendedContent, setAppendedContent] = useState('');
+
+  // Theme colors
+  const backgroundColor = useThemeColor({}, 'background');
+  const textColor = useThemeColor({}, 'text');
+  const cardColor = useThemeColor({}, 'background');
+  const borderColor = useThemeColor({}, 'icon');
+  const iconColor = useThemeColor({}, 'icon');
 
   const resetModalState = () => {
     setImageUri(null);
@@ -136,17 +144,17 @@ export default function AppendScanModal({
       transparent={false}
       onRequestClose={closeModal}
     >
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor="#f9fafb" />
-        <View style={styles.header}>
+      <SafeAreaView style={[styles.container, { backgroundColor }]}>
+        <StatusBar barStyle={backgroundColor === '#fff' ? 'dark-content' : 'light-content'} backgroundColor={backgroundColor} />
+        <View style={[styles.header, { backgroundColor, borderBottomColor: borderColor }]}>
           <View>
-            <Text style={styles.headerTitle}>Append to Note</Text>
-            <Text style={styles.headerSubtitle} numberOfLines={1}>
+            <Text style={[styles.headerTitle, { color: textColor }]}>Append to Note</Text>
+            <Text style={[styles.headerSubtitle, { color: iconColor }]} numberOfLines={1}>
               {noteTitle}
             </Text>
           </View>
           <TouchableOpacity onPress={closeModal} style={styles.closeButton}>
-            <Ionicons name="close" size={24} color="#6b7280" />
+            <Ionicons name="close" size={24} color={iconColor} />
           </TouchableOpacity>
         </View>
 

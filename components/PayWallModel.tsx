@@ -409,7 +409,18 @@ const PayWallModel = () => {
 
           {/* Offer Bar */}
           <View style={styles.offerBar}>
-            <Text style={styles.offerBarText}>SPECIAL OFFER</Text>
+            <View style={{flex: 1}}>
+              <Text style={styles.offerBarText}>SPECIAL OFFER</Text>
+              {/* Benefits list */}
+              <View style={{marginTop: 8}}>
+                {premiumFeatures.map((feature, idx) => (
+                  <View key={idx} style={{flexDirection: 'row', alignItems: 'center', marginBottom: 4}}>
+                    <Ionicons name="checkmark" size={16} color="#181818" style={{marginRight: 6}} />
+                    <Text style={{color: '#181818', fontSize: 13, fontWeight: 'bold'}}>{feature.title}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
             <Ionicons name="checkmark-circle" size={22} color="#181818" style={styles.offerBarCheck} />
           </View>
 
@@ -442,30 +453,6 @@ const PayWallModel = () => {
                         <Text style={styles.snapPlanNewPrice}>{pack.product.priceString}</Text>
                       </View>
                     </View>
-                    {/* Only show description and features for selected plan */}
-                    {isSelected && (
-                      <>
-                        <Text style={styles.snapPlanDesc}>{pack.product.description}</Text>
-                        {/* Example features, you can replace with your own */}
-                        <View style={{marginTop: 8}}>
-                          <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 4}}>
-                            <Ionicons name="checkmark" size={16} color="#FFD700" style={{marginRight: 6}} />
-                            <Text style={{color: '#fff', fontSize: 13}}>Access 40+ exclusive features</Text>
-                          </View>
-                          <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                            <Ionicons name="checkmark" size={16} color="#FFD700" style={{marginRight: 6}} />
-                            <Text style={{color: '#fff', fontSize: 13}}>Cancel or change plan at any time</Text>
-                          </View>
-                          {/* Add more features as needed */}
-                        </View>
-                        {/* Example extra info for monthly plan */}
-                        {pack.product.identifier.toLowerCase().includes('month') && (
-                          <Text style={{color: '#FFD700', fontSize: 12, marginTop: 6}}>
-                            $1.99 / mo for the first 2 months, then $4.99 / mo
-                          </Text>
-                        )}
-                      </>
-                    )}
                   </TouchableOpacity>
                 );
               })
@@ -502,7 +489,7 @@ const PayWallModel = () => {
           {/* Footer */}
           <View style={styles.snapFooter}>
             <Text style={styles.snapFooterText}>
-              Features can change at any time. Payment will be charged to your App Store account. Subscription auto-renews unless canceled at least 24 hours before the end of the period.
+              Features can change at any time. Payment will be charged to your App Store account. This is one time payment.
             </Text>
           </View>
         </Animated.View>

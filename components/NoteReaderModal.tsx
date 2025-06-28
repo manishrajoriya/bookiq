@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { Modal, Platform, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useThemeColor } from '../hooks/useThemeColor';
 
 interface NoteReaderModalProps {
   visible: boolean;
@@ -25,6 +26,12 @@ export default function NoteReaderModal({
   isQuiz = false
 }: NoteReaderModalProps) {
   const router = useRouter();
+  // Theme colors
+  const backgroundColor = useThemeColor({}, 'background');
+  const textColor = useThemeColor({}, 'text');
+  const borderColor = useThemeColor({}, 'icon');
+  const iconColor = useThemeColor({}, 'icon');
+  const cardColor = useThemeColor({}, 'background');
 
   if (!note) return null;
 
@@ -38,23 +45,23 @@ export default function NoteReaderModal({
       transparent={false}
       statusBarTranslucent={true}
     >
-      <StatusBar barStyle="dark-content" backgroundColor="white" />
-      <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
+      <StatusBar barStyle={backgroundColor === '#fff' ? 'dark-content' : 'light-content'} backgroundColor={backgroundColor} />
+      <SafeAreaView style={[styles.container, { backgroundColor }]}>
+        <View style={[styles.header, { borderBottomColor: borderColor, backgroundColor }]}>
           <TouchableOpacity 
             onPress={onClose}
             style={styles.closeButton}
           >
-            <Ionicons name="close" size={24} color="#6b7280" />
+            <Ionicons name="close" size={24} color={iconColor} />
           </TouchableOpacity>
           <View style={styles.headerContent}>
-            <Text style={styles.title} numberOfLines={1}>
+            <Text style={[styles.title, { color: textColor }]} numberOfLines={1}>
               {note.title}
             </Text>
             <View style={styles.meta}>
               <View style={styles.metaItem}>
-                <Ionicons name="time-outline" size={16} color="#6b7280" />
-                <Text style={styles.metaText}>
+                <Ionicons name="time-outline" size={16} color={iconColor} />
+                <Text style={[styles.metaText, { color: iconColor }]}>
                   {createdAt.toLocaleDateString('en-US', {
                     month: 'short',
                     day: 'numeric',
@@ -65,15 +72,15 @@ export default function NoteReaderModal({
                 </Text>
               </View>
               <View style={styles.metaItem}>
-                <Ionicons name="document-text-outline" size={16} color="#6b7280" />
-                <Text style={styles.metaText}>
+                <Ionicons name="document-text-outline" size={16} color={iconColor} />
+                <Text style={[styles.metaText, { color: iconColor }]}>
                   {wordCount} words
                 </Text>
               </View>
               {isScanNote && (
-                <View style={styles.scanBadge}>
-                  <Ionicons name="scan-outline" size={12} color="#6366f1" />
-                  <Text style={styles.scanText}>Scan Note</Text>
+                <View style={[styles.scanBadge, { backgroundColor: cardColor }]}>
+                  <Ionicons name="scan-outline" size={12} color={iconColor} />
+                  <Text style={[styles.scanText, { color: iconColor }]}>Scan Note</Text>
                 </View>
               )}
             </View>
@@ -89,7 +96,7 @@ export default function NoteReaderModal({
               }
             }}
           >
-            <Ionicons name="create-outline" size={20} color="#6366f1" />
+            <Ionicons name="create-outline" size={20} color={iconColor} />
           </TouchableOpacity>
         </View>
         
@@ -98,7 +105,7 @@ export default function NoteReaderModal({
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.contentContainer}
         >
-          <Text style={styles.noteText}>
+          <Text style={[styles.noteText, { color: textColor }]}>
             {note.content}
           </Text>
         </ScrollView>
@@ -110,7 +117,6 @@ export default function NoteReaderModal({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'white',
     paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0,
   },
   header: {
@@ -119,7 +125,6 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingTop: Platform.OS === 'ios' ? 8 : 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
   },
   closeButton: {
     padding: 8,
@@ -132,7 +137,6 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#111827',
     marginBottom: 6,
   },
   meta: {
@@ -147,13 +151,11 @@ const styles = StyleSheet.create({
   },
   metaText: {
     fontSize: 13,
-    color: '#6b7280',
     marginLeft: 4,
   },
   scanBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#eef2ff',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
@@ -161,7 +163,6 @@ const styles = StyleSheet.create({
   scanText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#6366f1',
     marginLeft: 2,
   },
   editButton: {
@@ -178,6 +179,5 @@ const styles = StyleSheet.create({
   noteText: {
     fontSize: 16,
     lineHeight: 26,
-    color: '#374151',
   },
 }); 

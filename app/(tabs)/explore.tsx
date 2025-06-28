@@ -17,6 +17,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { useThemeColor } from '../../hooks/useThemeColor';
 import { getAnswerFromGemini, processImage } from '../../services/geminiServices';
 import {
     addHistory,
@@ -148,7 +149,7 @@ const Explore = () => {
         setNoteContent("");
 
         try {
-            setLoadingMessage('Scanning image... (1 credit)');
+            setLoadingMessage('Scanning image... ');
             const hasEnoughCredits = await spendCredits(1);
             if (!hasEnoughCredits) {
                 Alert.alert(
@@ -254,19 +255,26 @@ const Explore = () => {
         setPendingHistoryId(null);
     };
 
+    // Theme colors
+    const backgroundColor = useThemeColor({}, 'background');
+    const textColor = useThemeColor({}, 'text');
+    const cardColor = useThemeColor({}, 'background');
+    const borderColor = useThemeColor({}, 'icon');
+    const iconColor = useThemeColor({}, 'icon');
+
     return (
-        <View style={styles.container}>
-            <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+        <View style={[styles.container, { backgroundColor }]}>
+            <StatusBar barStyle={backgroundColor === '#fff' ? 'dark-content' : 'light-content'} backgroundColor={backgroundColor} />
             
             {/* Header */}
-            <View style={styles.header}>
+            <View style={[styles.header, { backgroundColor, borderBottomColor: borderColor }]}>
                 <View>
-                    <Text style={styles.greeting}>Good morning! 👋</Text>
-                    <Text style={styles.headerTitle}>Ready to learn?</Text>
+                    <Text style={[styles.greeting, { color: iconColor }]}>Good morning! 👋</Text>
+                    <Text style={[styles.headerTitle, { color: textColor }]}>Ready to learn?</Text>
                 </View>
                 <TouchableOpacity style={styles.profileButton}>
-                    <View style={styles.profileAvatar}>
-                        <Ionicons name="person-outline" size={20} color="#667eea" />
+                    <View style={[styles.profileAvatar, { backgroundColor: cardColor, borderColor }]}>
+                        <Ionicons name="person-outline" size={20} color={iconColor} />
                     </View>
                 </TouchableOpacity>
             </View>
@@ -281,9 +289,9 @@ const Explore = () => {
                 {/* Quick Tools */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
-                        <Text style={styles.sectionTitle}>Quick Tools</Text>
+                        <Text style={[styles.sectionTitle, { color: textColor }]}>Quick Tools</Text>
                         <TouchableOpacity onPress={() => setShowAllTools(!showAllTools)}>
-                            <Text style={styles.seeAllText}>
+                            <Text style={[styles.seeAllText, { color: iconColor }]}>
                                 {showAllTools ? 'Show less' : 'See all'}
                             </Text>
                         </TouchableOpacity>
@@ -293,14 +301,14 @@ const Explore = () => {
                         {displayedTools.map((tool, index) => (
                             <TouchableOpacity 
                                 key={index} 
-                                style={[styles.toolCard, { backgroundColor: tool.bgColor }]}
+                                style={[styles.toolCard, { backgroundColor: cardColor, borderColor }]}
                                 onPress={() => handleToolPress(tool.feature)}
                                 activeOpacity={0.7}
                             >
                                 <View style={[styles.toolIcon, { backgroundColor: tool.color }]}>
                                     <Ionicons name={tool.icon as any} size={20} color="white" />
                                 </View>
-                                <Text style={styles.toolName}>{tool.name}</Text>
+                                <Text style={[styles.toolName, { color: textColor }]}>{tool.name}</Text>
                             </TouchableOpacity>
                         ))}
                     </View>
@@ -309,9 +317,9 @@ const Explore = () => {
                 {/* Subjects */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
-                        <Text style={styles.sectionTitle}>Subjects</Text>
+                        <Text style={[styles.sectionTitle, { color: textColor }]}>Subjects</Text>
                         <TouchableOpacity onPress={() => setShowAllSubjects(!showAllSubjects)}>
-                            <Text style={styles.seeAllText}>
+                            <Text style={[styles.seeAllText, { color: iconColor }]}>
                                 {showAllSubjects ? 'Show less' : 'Browse all'}
                             </Text>
                         </TouchableOpacity>
@@ -321,7 +329,7 @@ const Explore = () => {
                         {displayedSubjects.map((subject, index) => (
                             <TouchableOpacity 
                                 key={index} 
-                                style={styles.subjectCard}
+                                style={[styles.subjectCard, { backgroundColor: cardColor, borderColor }]}
                                 onPress={() => showImagePickerOptions(subject.feature)}
                                 activeOpacity={0.8}
                             >
@@ -329,10 +337,10 @@ const Explore = () => {
                                     <Ionicons name={subject.icon as any} size={24} color="white" />
                                 </View>
                                 <View style={styles.subjectInfo}>
-                                    <Text style={styles.subjectName}>{subject.name}</Text>
+                                    <Text style={[styles.subjectName, { color: textColor }]}>{subject.name}</Text>
                                     
                                 </View>
-                                <Ionicons name="chevron-forward" size={16} color="#c1c1c1" />
+                                <Ionicons name="chevron-forward" size={16} color={iconColor} />
                             </TouchableOpacity>
                         ))}
                     </View>
@@ -435,7 +443,7 @@ const Explore = () => {
                                         onChangeText={setNoteTitle}
                                         placeholder="Enter note title"
                                     />
-                                    <Text style={styles.inputLabel}>Content</Text>
+                                                <Text style={styles.inputLabel}>Content</Text>
                                     <ScrollView style={styles.extractedTextView}>
                                         <TextInput
                                             style={[styles.extractedTextContent, { minHeight: 120 }]}

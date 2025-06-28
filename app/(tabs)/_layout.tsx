@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Tabs } from 'expo-router';
 import React from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
+import { useThemeColor } from '../../hooks/useThemeColor';
 
 const COLORS = {
   primary: {
@@ -18,20 +19,27 @@ const COLORS = {
 };
 
 export default function TabLayout() {
+  // Theme colors
+  const backgroundColor = useThemeColor({}, 'background');
+  const textColor = useThemeColor({}, 'text');
+  const borderColor = useThemeColor({}, 'icon');
+  const activeColor = useThemeColor({}, 'tint');
+  const inactiveColor = useThemeColor({}, 'icon');
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor }]}>
       <Tabs
         screenOptions={{
           headerShown: false,
-          tabBarStyle: styles.tabBar,
+          tabBarStyle: [styles.tabBar, { backgroundColor }],
           tabBarShowLabel: true,
-          tabBarActiveTintColor: COLORS.primary.start,
-          tabBarInactiveTintColor: COLORS.text.light,
+          tabBarActiveTintColor: activeColor,
+          tabBarInactiveTintColor: inactiveColor,
           tabBarLabelStyle: styles.tabBarLabel,
           tabBarBackground: () => (
             <LinearGradient
-              colors={[COLORS.surface, COLORS.surface]}
-              style={styles.tabBarBackground}
+              colors={[backgroundColor, backgroundColor]}
+              style={[styles.tabBarBackground, { borderColor }]}
             />
           ),
         }}
@@ -71,7 +79,6 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.surface,
   },
   tabBar: {
     position: 'absolute',
@@ -79,11 +86,9 @@ const styles = StyleSheet.create({
     left: 20,
     right: 20,
     elevation: 0,
-    backgroundColor: 'transparent',
     borderTopWidth: 0,
     height: 60,
     borderRadius: 30,
-    shadowColor: COLORS.primary.start,
     shadowOffset: {
       width: 0,
       height: 2,
@@ -99,7 +104,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     borderRadius: 30,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.1)',
   },
   tabBarLabel: {
     fontSize: 12,

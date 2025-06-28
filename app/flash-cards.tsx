@@ -21,9 +21,10 @@ import {
   Vibration,
   View
 } from 'react-native';
-import NoteReaderModal from '../components/NoteReaderModal';
-import { generateFlashCardsFromNotes, processImage } from '../services/geminiServices';
-import { addFlashCardSet, addHistory, FlashCardSet, getAllFlashCardSets, resetFlashCardSetTable, spendCredits } from '../services/historyStorage';
+import FlashCardGenerationModal from '../components/FlashCardGenerationModal';
+import FlashCardViewer from '../components/FlashCardViewer';
+import { processImage } from '../services/geminiServices';
+import { addFlashCardSet, FlashCardSet, getAllFlashCardSets, resetFlashCardSetTable, spendCredits } from '../services/historyStorage';
 
 const { width, height } = Dimensions.get('window');
 
@@ -49,15 +50,11 @@ const FlashCardMaker = () => {
   const [selectedSet, setSelectedSet] = useState<FlashCardSet | null>(null);
   const [previewModalVisible, setPreviewModalVisible] = useState(false);
   
-  // FlashCard generation state
+  // FlashCard generation modal state
   const [generationModalVisible, setGenerationModalVisible] = useState(false);
-  const [generatedCards, setGeneratedCards] = useState<string>('');
-  const [selectedCardType, setSelectedCardType] = useState<CardType>('term-definition');
-  const [numberOfCards, setNumberOfCards] = useState<number>(10);
-  const [flashCardState, setFlashCardState] = useState<FlashCardState>({
-    isGenerating: false,
-    progress: 0
-  });
+  
+  // FlashCard viewer modal state
+  const [viewerModalVisible, setViewerModalVisible] = useState(false);
   
   // Scan state for direct generation
   const [scanModalVisible, setScanModalVisible] = useState(false);
@@ -70,7 +67,6 @@ const FlashCardMaker = () => {
   const [manualTitle, setManualTitle] = useState('');
   const [manualContent, setManualContent] = useState('');
   const [manualCardType, setManualCardType] = useState<CardType>('term-definition');
-  const [manualNumberOfCards, setManualNumberOfCards] = useState<number>(10);
   const [isSavingManual, setIsSavingManual] = useState(false);
   
   // Error handling
@@ -237,161 +233,26 @@ const FlashCardMaker = () => {
     }
   };
 
-  const generateCards = async () => {
-    if (!selectedSet) return;
-
-    try {
-      setFlashCardState(prev => ({ ...prev, isGenerating: true }));
-      clearError();
-
-      const hasEnoughCredits = await spendCredits(2);
-      if (!hasEnoughCredits) {
-        Alert.alert(
-          "Out of Credits",
-          "You need at least 2 credits to generate flash cards.",
-          [
-            { text: "Cancel", style: "cancel" },
-            { text: "Get Credits", onPress: () => router.push('/paywall') }
-          ]
-        );
-        setFlashCardState(prev => ({ ...prev, isGenerating: false }));
-        return;
-      }
-
-      setFlashCardState(prev => ({ ...prev, progress: 30 }));
-
-      const cards = await generateFlashCardsFromNotes(
-        selectedSet.content,
-        numberOfCards,
-        selectedCardType
-      );
-
-      setFlashCardState(prev => ({ ...prev, progress: 80 }));
-
-      setGeneratedCards(cards);
-      setFlashCardState(prev => ({ ...prev, progress: 100 }));
-
-      // Add to history
-      await addHistory('', 'flash-cards', selectedSet.title, cards);
-
-    } catch (error) {
-      console.error('Flash card generation error:', error);
-      handleError('generating', 'Failed to generate flash cards. Please try again.', true);
-    } finally {
-      setFlashCardState(prev => ({ ...prev, isGenerating: false, progress: 0 }));
-    }
+  const openGenerationModal = (set: FlashCardSet) => {
+    setSelectedSet(set);
+    setGenerationModalVisible(true);
+    clearError();
   };
 
-  const saveGeneratedCards = async () => {
-    if (!generatedCards || !selectedSet) return;
-
-    try {
-      const title = `${selectedSet.title} - ${selectedCardType.replace('-', ' ')} Set`;
-      
-      await addFlashCardSet(
-        title,
-        generatedCards,
-        selectedCardType,
-        numberOfCards,
-        selectedSet.id,
-        selectedSet.source_note_type as 'note' | 'scan-note'
-      );
-
-      // Refresh the list
-      await loadFlashCardSets();
-      
-      Alert.alert(
-        'Success!', 
-        'Flash card set has been saved successfully.',
-        [{ text: 'OK' }]
-      );
-      
-      closeGenerationModal();
-    } catch (error) {
-      console.error('Failed to save set:', error);
-      Alert.alert('Error', 'Failed to save set. Please try again.');
-    }
+  const closeGenerationModal = () => {
+    setGenerationModalVisible(false);
+    setSelectedSet(null);
+    clearError();
   };
 
-  const generateCardsFromScan = async () => {
-    if (!extractedText) return;
-
-    try {
-      setFlashCardState(prev => ({ ...prev, isGenerating: true }));
-      clearError();
-
-      const hasEnoughCredits = await spendCredits(2);
-      if (!hasEnoughCredits) {
-        Alert.alert(
-          "Out of Credits",
-          "You need at least 2 credits to generate flash cards.",
-          [
-            { text: "Cancel", style: "cancel" },
-            { text: "Get Credits", onPress: () => router.push('/paywall') }
-          ]
-        );
-        setFlashCardState(prev => ({ ...prev, isGenerating: false }));
-        return;
-      }
-
-      setFlashCardState(prev => ({ ...prev, progress: 30 }));
-
-      const cards = await generateFlashCardsFromNotes(
-        extractedText,
-        numberOfCards,
-        selectedCardType,
-      );
-
-      setFlashCardState(prev => ({ ...prev, progress: 80 }));
-
-      setGeneratedCards(cards);
-      setFlashCardState(prev => ({ ...prev, progress: 100 }));
-
-      // Add to history
-      await addHistory(imageUri || '', 'flash-cards', 'Scanned Document', cards);
-
-    } catch (error) {
-      console.error('Flash card generation error:', error);
-      handleError('generating', 'Failed to generate flash cards. Please try again.', true);
-    } finally {
-      setFlashCardState(prev => ({ ...prev, isGenerating: false, progress: 0 }));
-    }
-  };
-
-  const saveScannedCards = async () => {
-    if (!generatedCards) return;
-
-    try {
-      const title = `Scanned Document - ${selectedCardType.replace('-', ' ')} Set`;
-      
-      await addFlashCardSet(
-        title,
-        generatedCards,
-        selectedCardType,
-        numberOfCards
-      );
-
-      // Refresh the list
-      await loadFlashCardSets();
-      
-      Alert.alert(
-        'Success!', 
-        'Flash card set has been saved successfully.',
-        [{ text: 'OK' }]
-      );
-      
-      closeScanModal();
-    } catch (error) {
-      console.error('Failed to save set:', error);
-      Alert.alert('Error', 'Failed to save set. Please try again.');
-    }
+  const handleFlashCardSaved = () => {
+    loadFlashCardSets();
   };
 
   const openManualModal = () => {
     setManualTitle('');
     setManualContent('');
     setManualCardType('term-definition');
-    setManualNumberOfCards(10);
     setManualModalVisible(true);
   };
 
@@ -419,8 +280,7 @@ const FlashCardMaker = () => {
       await addFlashCardSet(
         manualTitle.trim(),
         manualContent.trim(),
-        manualCardType,
-        manualNumberOfCards
+        manualCardType
       );
 
       await loadFlashCardSets();
@@ -469,33 +329,27 @@ const FlashCardMaker = () => {
     setPreviewModalVisible(true);
   };
 
-  const openGenerationModal = (set: FlashCardSet) => {
+  const openFlashCardViewer = (set: FlashCardSet) => {
     setSelectedSet(set);
-    setGenerationModalVisible(true);
-    setGeneratedCards('');
-    clearError();
+    setViewerModalVisible(true);
   };
 
-  const closeGenerationModal = () => {
-    if (flashCardState.isGenerating) {
-      Alert.alert('Generation in Progress', 'Please wait for the generation to complete.', [{ text: 'OK' }]);
-      return;
-    }
-    setGenerationModalVisible(false);
-    setSelectedSet(null);
-    setGeneratedCards('');
-    clearError();
+  const parseFlashCards = (content: string): { front: string; back: string }[] => {
+    return content
+      .split('---')
+      .map(cardBlock => {
+        const frontMatch = cardBlock.match(/FRONT:\s*(.*)/);
+        const backMatch = cardBlock.match(/BACK:\s*(.*)/);
+        if (frontMatch && backMatch) {
+          return { front: frontMatch[1].trim(), back: backMatch[1].trim() };
+        }
+        return null;
+      })
+      .filter(Boolean) as { front: string; back: string }[];
   };
 
   const retryLastAction = () => {
     switch (error.type) {
-      case 'generating':
-        if (selectedSet) {
-          generateCards();
-        } else if (extractedText) {
-          generateCardsFromScan();
-        }
-        break;
       case 'scanning':
         if (imageUri) {
           processScannedImage(imageUri);
@@ -540,8 +394,20 @@ const FlashCardMaker = () => {
             </Text>
             <View style={styles.noteActions}>
               <TouchableOpacity 
+                style={styles.practiceButton}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  openFlashCardViewer(item);
+                }}
+              >
+                <Ionicons name="play-outline" size={16} color="#10b981" />
+              </TouchableOpacity>
+              <TouchableOpacity 
                 style={styles.quizButton}
-                onPress={() => openGenerationModal(item)}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  openGenerationModal(item);
+                }}
               >
                 <Ionicons name="copy-outline" size={16} color="#f093fb" />
               </TouchableOpacity>
@@ -617,28 +483,6 @@ const FlashCardMaker = () => {
         >
           <Ionicons name="close" size={16} color="#ef4444" />
         </TouchableOpacity>
-      </View>
-    );
-  };
-
-  const renderGenerationProgress = () => {
-    if (!flashCardState.isGenerating) return null;
-    
-    return (
-      <View style={styles.progressContainer}>
-        <View style={styles.progressHeader}>
-          <Ionicons name="copy-outline" size={24} color="#f093fb" />
-          <Text style={styles.progressTitle}>Generating Set...</Text>
-        </View>
-        <View style={styles.progressBarContainer}>
-          <View 
-            style={[
-              styles.progressBar,
-              { width: `${flashCardState.progress}%` }
-            ]} 
-          />
-        </View>
-        <Text style={styles.progressText}>{flashCardState.progress}% complete</Text>
       </View>
     );
   };
@@ -719,135 +563,24 @@ const FlashCardMaker = () => {
         />
       )}
 
-      <NoteReaderModal
-        visible={previewModalVisible}
-        onClose={() => setPreviewModalVisible(false)}
-        note={selectedSet}
-        isScanNote={false}
+      {/* Flash Card Viewer Modal */}
+      <FlashCardViewer
+        visible={viewerModalVisible}
+        onClose={() => setViewerModalVisible(false)}
+        cards={selectedSet ? parseFlashCards(selectedSet.content) : []}
+        title={selectedSet?.title || ''}
       />
 
-      <Modal
+      {/* Flash Card Generation Modal */}
+      <FlashCardGenerationModal
         visible={generationModalVisible}
-        animationType="slide"
-        transparent={false}
-        onRequestClose={closeGenerationModal}
-      >
-        <SafeAreaView style={styles.modalSafeAreView}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <View style={styles.modalTitleContainer}>
-                <Text style={styles.modalTitle}>Generate Flash Cards</Text>
-                <TouchableOpacity 
-                  onPress={closeGenerationModal}
-                  style={styles.closeButton}
-                >
-                  <Ionicons name="close" size={24} color="#6b7280" />
-                </TouchableOpacity>
-              </View>
-              {selectedSet && (
-                <Text style={styles.selectedNoteTitle}>
-                  From: {selectedSet.title}
-                </Text>
-              )}
-            </View>
-
-            <ScrollView 
-              style={styles.modalContent}
-              showsVerticalScrollIndicator={false}
-            >
-              {!generatedCards && (
-                <View style={styles.settingsSection}>
-                  <Text style={styles.sectionTitle}>Set Settings</Text>
-                  
-                  <View style={styles.settingGroup}>
-                    <Text style={styles.settingLabel}>Card Type</Text>
-                    <View style={styles.quizTypeButtons}>
-                      {(['term-definition', 'question-answer'] as CardType[]).map((type) => (
-                        <TouchableOpacity
-                          key={type}
-                          style={[
-                            styles.quizTypeButton,
-                            selectedCardType === type && styles.quizTypeButtonActive
-                          ]}
-                          onPress={() => setSelectedCardType(type)}
-                        >
-                          <Text style={[
-                            styles.quizTypeButtonText,
-                            selectedCardType === type && styles.quizTypeButtonTextActive
-                          ]}>
-                            {type.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
-
-                  <View style={styles.settingGroup}>
-                    <Text style={styles.settingLabel}>Number of Cards</Text>
-                    <View style={styles.questionCountButtons}>
-                      {[5, 10, 20, 30].map((count) => (
-                        <TouchableOpacity
-                          key={count}
-                          style={[
-                            styles.questionCountButton,
-                            numberOfCards === count && styles.questionCountButtonActive
-                          ]}
-                          onPress={() => setNumberOfCards(count)}
-                        >
-                          <Text style={[
-                            styles.questionCountButtonText,
-                            numberOfCards === count && styles.questionCountButtonTextActive
-                          ]}>
-                            {count}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.generateButton,
-                      flashCardState.isGenerating && styles.generateButtonDisabled
-                    ]}
-                    onPress={generateCards}
-                    disabled={flashCardState.isGenerating}
-                  >
-                    {flashCardState.isGenerating ? (
-                      <ActivityIndicator color="white" size="small" />
-                    ) : (
-                      <>
-                        <Ionicons name="sparkles-outline" size={20} color="white" />
-                        <Text style={styles.generateButtonText}>
-                          Generate Set (2 Credits)
-                        </Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {renderGenerationProgress()}
-
-              {generatedCards && (
-                <View style={styles.quizSection}>
-                  <Text style={styles.sectionTitle}>Generated Set</Text>
-                  <View style={styles.quizContent}>
-                    <Text style={styles.quizText}>{generatedCards}</Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.saveButton}
-                    onPress={saveGeneratedCards}
-                  >
-                    <Ionicons name="save-outline" size={20} color="white" />
-                    <Text style={styles.saveButtonText}>Save Set</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </ScrollView>
-          </View>
-        </SafeAreaView>
-      </Modal>
+        onClose={closeGenerationModal}
+        sourceContent={selectedSet?.content || ''}
+        sourceTitle={selectedSet?.title || ''}
+        sourceId={selectedSet?.id}
+        sourceType={(selectedSet?.source_note_type as 'note' | 'scan-note') || 'note'}
+        onFlashCardSaved={handleFlashCardSaved}
+      />
 
       <Modal
         visible={scanModalVisible}
@@ -942,98 +675,27 @@ const FlashCardMaker = () => {
                   </View>
                 </View>
               )}
-
-              {extractedText && (
-                <View style={styles.quizSettingsSection}>
-                  <Text style={styles.sectionTitle}>Set Settings</Text>
-                  
-                  <View style={styles.settingGroup}>
-                    <Text style={styles.settingLabel}>Card Type</Text>
-                    <View style={styles.quizTypeButtons}>
-                      {(['term-definition', 'question-answer'] as CardType[]).map((type) => (
-                        <TouchableOpacity
-                          key={type}
-                          style={[
-                            styles.quizTypeButton,
-                            selectedCardType === type && styles.quizTypeButtonActive
-                          ]}
-                          onPress={() => setSelectedCardType(type)}
-                        >
-                          <Text style={[
-                            styles.quizTypeButtonText,
-                            selectedCardType === type && styles.quizTypeButtonTextActive
-                          ]}>
-                            {type.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
-
-                  <View style={styles.settingGroup}>
-                    <Text style={styles.settingLabel}>Number of Cards</Text>
-                    <View style={styles.questionCountButtons}>
-                      {[5, 10, 20, 30].map((count) => (
-                        <TouchableOpacity
-                          key={count}
-                          style={[
-                            styles.questionCountButton,
-                            numberOfCards === count && styles.questionCountButtonActive
-                          ]}
-                          onPress={() => setNumberOfCards(count)}
-                        >
-                          <Text style={[
-                            styles.questionCountButtonText,
-                            numberOfCards === count && styles.questionCountButtonTextActive
-                          ]}>
-                            {count}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
-                </View>
-              )}
-
-              {generatedCards && (
-                <View style={styles.quizSection}>
-                  <Text style={styles.sectionTitle}>Generated Set</Text>
-                  <View style={styles.quizContent}>
-                    <Text style={styles.quizText}>{generatedCards}</Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.saveButton}
-                    onPress={saveScannedCards}
-                  >
-                    <Ionicons name="save-outline" size={20} color="white" />
-                    <Text style={styles.saveButtonText}>Save Set</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {renderGenerationProgress()}
             </ScrollView>
 
-            {extractedText && !generatedCards && (
+            {extractedText && (
               <View style={styles.generateButtonSection}>
                 <TouchableOpacity
-                  style={[
-                    styles.generateButton,
-                    flashCardState.isGenerating && styles.generateButtonDisabled
-                  ]}
-                  onPress={generateCardsFromScan}
-                  disabled={flashCardState.isGenerating}
+                  style={styles.generateButton}
+                  onPress={() => {
+                    closeScanModal();
+                    // Open flash card generation modal with scanned content
+                    setSelectedSet({
+                      id: 0,
+                      title: 'Scanned Document',
+                      content: extractedText,
+                      card_type: 'term-definition',
+                      createdAt: new Date().toISOString()
+                    });
+                    setGenerationModalVisible(true);
+                  }}
                 >
-                  {flashCardState.isGenerating ? (
-                    <ActivityIndicator color="white" size="small" />
-                  ) : (
-                    <>
-                      <Ionicons name="sparkles-outline" size={20} color="white" />
-                      <Text style={styles.generateButtonText}>
-                        Generate Set (2 Credits)
-                      </Text>
-                    </>
-                  )}
+                  <Ionicons name="sparkles-outline" size={20} color="white" />
+                  <Text style={styles.generateButtonText}>Generate Flash Cards</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -1110,29 +772,6 @@ const FlashCardMaker = () => {
                           manualCardType === type && styles.quizTypeButtonTextActive
                         ]}>
                           {type.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-
-                <View style={styles.settingGroup}>
-                  <Text style={styles.settingLabel}>Number of Cards</Text>
-                  <View style={styles.questionCountButtons}>
-                    {[5, 10, 20, 30].map((count) => (
-                      <TouchableOpacity
-                        key={count}
-                        style={[
-                          styles.questionCountButton,
-                          manualNumberOfCards === count && styles.questionCountButtonActive
-                        ]}
-                        onPress={() => setManualNumberOfCards(count)}
-                      >
-                        <Text style={[
-                          styles.questionCountButtonText,
-                          manualNumberOfCards === count && styles.questionCountButtonTextActive
-                        ]}>
-                          {count}
                         </Text>
                       </TouchableOpacity>
                     ))}
@@ -1310,6 +949,10 @@ const styles = StyleSheet.create({
   noteActions: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  practiceButton: {
+    padding: 4,
+    marginLeft: 8,
   },
   quizButton: {
     padding: 4,

@@ -14,6 +14,7 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+import { useThemeColor } from '../../hooks/useThemeColor';
 import { getAnswerFromGemini, processImage } from '../../services/geminiServices';
 import { addHistory, spendCredits, updateHistoryAnswer } from '../../services/historyStorage';
 
@@ -26,6 +27,13 @@ const Index = () => {
   const [error, setError] = useState<string | null>(null);
   const [extractedText, setExtractedText] = useState<string | null>(null);
   const [historyId, setHistoryId] = useState<number | null>(null);
+
+  // Theme colors
+  const backgroundColor = useThemeColor({}, 'background');
+  const textColor = useThemeColor({}, 'text');
+  const cardColor = useThemeColor({}, 'background');
+  const borderColor = useThemeColor({}, 'icon');
+  const iconColor = useThemeColor({}, 'icon');
 
   useEffect(() => {
     // Initialization is now done in _layout.tsx
@@ -143,10 +151,10 @@ const Index = () => {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>AI Scan</Text>
-        <Text style={styles.headerSubtitle}>Extract text and get insights from your images.</Text>
+    <View style={[styles.container, { backgroundColor }]}>
+      <View style={[styles.header, { backgroundColor, borderBottomColor: borderColor }]}>
+        <Text style={[styles.headerTitle, { color: textColor }]}>AI Scan</Text>
+        <Text style={[styles.headerSubtitle, { color: iconColor }]}>Extract text and get insights from your images.</Text>
       </View>
 
       <View style={styles.content}>
