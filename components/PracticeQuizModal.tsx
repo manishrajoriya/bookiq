@@ -3,8 +3,8 @@ import React, { useState } from 'react';
 import {
     Modal,
     Platform,
-    SafeAreaView,
     ScrollView,
+    StatusBar,
     StyleSheet,
     Text,
     TouchableOpacity,
@@ -26,8 +26,9 @@ interface PracticeState {
   showAnswers: boolean;
   score: number;
   isComplete: boolean;
-  mode: 'per-question' | 'all-at-once';
+  mode: 'exam' | 'practice' | 'preview';
   checked: boolean;
+  showModeSelector: boolean;
 }
 
 interface PracticeQuizModalProps {
@@ -56,8 +57,9 @@ export default function PracticeQuizModal({
     showAnswers: false,
     score: 0,
     isComplete: false,
-    mode: 'per-question',
+    mode: 'practice',
     checked: false,
+    showModeSelector: true,
   });
   const [practiceStartTime, setPracticeStartTime] = useState<number | null>(null);
   const [practiceEndTime, setPracticeEndTime] = useState<number | null>(null);
@@ -68,6 +70,13 @@ export default function PracticeQuizModal({
   const textColor = useThemeColor({}, 'text');
   const borderColor = useThemeColor({}, 'icon');
   const iconColor = useThemeColor({}, 'icon');
+  
+  // Theme-aware color variants for better visual comfort
+  const isDark = backgroundColor === '#0f0f0f' || backgroundColor === '#151718';
+  const softBackground = isDark ? '#1a1a1a' : '#f8f9fa';
+  const softerBackground = isDark ? '#2a2a2a' : '#f5f5f5';
+  const mutedBackground = isDark ? '#333333' : '#fafafa';
+  const cardBackground = isDark ? '#1a1a1a' : '#f8f9fa';
 
   const closeModal = () => {
     onClose();
@@ -78,8 +87,9 @@ export default function PracticeQuizModal({
       showAnswers: false,
       score: 0,
       isComplete: false,
-      mode: 'per-question',
+      mode: 'practice',
       checked: false,
+      showModeSelector: true,
     });
     setPracticeStartTime(null);
     setPracticeEndTime(null);
@@ -143,10 +153,37 @@ export default function PracticeQuizModal({
       showAnswers: false,
       score: 0,
       isComplete: false,
-      mode: 'per-question',
+      mode: 'practice',
       checked: false,
+      showModeSelector: true,
     });
-    setPracticeStartTime(Date.now());
+    setPracticeStartTime(null);
+    setPracticeEndTime(null);
+    setReviewMode(false);
+  };
+
+  const selectMode = (mode: 'exam' | 'practice' | 'preview') => {
+    setPracticeState(prev => ({
+      ...prev,
+      mode,
+      showModeSelector: false,
+      showAnswers: mode === 'preview' ? true : false,
+    }));
+    if (mode !== 'preview') {
+      setPracticeStartTime(Date.now());
+    }
+  };
+
+  const goBackToModeSelector = () => {
+    setPracticeState(prev => ({
+      ...prev,
+      showModeSelector: true,
+      showAnswers: false,
+      isComplete: false,
+      currentQuestionIndex: 0,
+      userAnswers: new Array(prev.questions.length).fill(-1),
+    }));
+    setPracticeStartTime(null);
     setPracticeEndTime(null);
     setReviewMode(false);
   };
@@ -168,16 +205,27 @@ export default function PracticeQuizModal({
           currentQuestionIndex: prev.currentQuestionIndex + 1
         };
       } else {
-        // Calculate final score
-        const score = prev.userAnswers.reduce((total, answer, index) => {
-          return total + (answer === prev.questions[index].correctAnswer ? 1 : 0);
-        }, 0);
-        setPracticeEndTime(Date.now());
-        return {
-          ...prev,
-          isComplete: true,
-          score
-        };
+        // Handle completion based on mode
+        if (prev.mode === 'preview') {
+          // For preview mode, just mark as complete without scoring
+          setPracticeEndTime(Date.now());
+          return {
+            ...prev,
+            isComplete: true,
+            score: -1 // -1 indicates preview mode (no score)
+          };
+        } else {
+          // Calculate final score for practice modes
+          const score = prev.userAnswers.reduce((total, answer, index) => {
+            return total + (answer === prev.questions[index].correctAnswer ? 1 : 0);
+          }, 0);
+          setPracticeEndTime(Date.now());
+          return {
+            ...prev,
+            isComplete: true,
+            score
+          };
+        }
       }
     });
   };
@@ -194,8 +242,8 @@ export default function PracticeQuizModal({
       ...prev,
       showAnswers: true,
       checked: true,
-      // For all-at-once mode, calculate score now
-      score: prev.mode === 'all-at-once' ? prev.userAnswers.reduce((total, answer, index) => {
+      // For exam mode, calculate score now
+      score: prev.mode === 'exam' ? prev.userAnswers.reduce((total, answer, index) => {
         return total + (answer === prev.questions[index].correctAnswer ? 1 : 0);
       }, 0) : prev.score
     }));
@@ -224,7 +272,18 @@ export default function PracticeQuizModal({
   // Initialize practice when modal opens
   React.useEffect(() => {
     if (visible && quiz && practiceState.questions.length === 0) {
-      startPractice();
+      const questions = parseQuizContent(quiz.content);
+      setPracticeState({
+        questions,
+        currentQuestionIndex: 0,
+        userAnswers: new Array(questions.length).fill(-1),
+        showAnswers: false,
+        score: 0,
+        isComplete: false,
+        mode: 'practice',
+        checked: false,
+        showModeSelector: true,
+      });
     }
   }, [visible, quiz]);
 
@@ -235,15 +294,19 @@ export default function PracticeQuizModal({
       visible={visible}
       animationType="slide"
       transparent={false}
+      statusBarTranslucent={true}
       onRequestClose={closeModal}
     >
-      <SafeAreaView style={[styles.modalSafeAreView, { backgroundColor }]}>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <View style={[styles.modalSafeAreView, { backgroundColor }]}>
         <View style={[styles.modalContainer, { backgroundColor }]}>
           {/* Modal Header */}
           <View style={[styles.modalHeader, { borderBottomColor: borderColor }]}>
             <View style={styles.modalTitleContainer}>
               <Text style={[styles.modalTitle, { color: textColor }]}>
-                {practiceState.isComplete ? 'Quiz Complete!' : 'Practice Quiz'}
+                {practiceState.isComplete ? 'Quiz Complete!' : 
+                 practiceState.showModeSelector ? 'Choose Mode' :
+                 practiceState.mode === 'preview' ? 'Preview Quiz' : 'Practice Quiz'}
               </Text>
               <TouchableOpacity 
                 onPress={closeModal}
@@ -253,225 +316,398 @@ export default function PracticeQuizModal({
               </TouchableOpacity>
             </View>
             <Text style={[styles.selectedNoteTitle, { color: iconColor }]}>
-              {quiz.title}
+              {quiz?.title || 'Untitled Quiz'}
             </Text>
+            {!practiceState.showModeSelector && !practiceState.isComplete && (
+              <View style={styles.modeIndicator}>
+                <View style={styles.modeBadge}>
+                  <Ionicons 
+                    name={practiceState.mode === 'preview' ? 'eye' : 
+                          practiceState.mode === 'practice' ? 'help-circle' : 'school'} 
+                    size={16} 
+                    color={practiceState.mode === 'preview' ? '#6366f1' : 
+                           practiceState.mode === 'practice' ? '#10b981' : '#f093fb'} 
+                  />
+                  <Text style={[styles.modeText, { 
+                    color: practiceState.mode === 'preview' ? '#6366f1' : 
+                           practiceState.mode === 'practice' ? '#10b981' : '#f093fb'
+                  }]}>
+                    {practiceState.mode === 'preview' ? 'Preview' : 
+                     practiceState.mode === 'practice' ? 'Practice' : 'Exam'} Mode
+                  </Text>
+                </View>
+                <TouchableOpacity 
+                  onPress={goBackToModeSelector}
+                  style={styles.backToModeButton}
+                >
+                  <Ionicons name="settings-outline" size={16} color={iconColor} />
+                  <Text style={[styles.backToModeText, { color: iconColor }]}>Change Mode</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
 
-          {practiceState.isComplete ? (
-            reviewMode ? (
-              // Review Screen
-              <ScrollView style={{flex: 1, padding: 16}}>
-                <Text style={[styles.reviewTitle, { color: textColor }]}>Review Answers</Text>
-                {practiceState.questions.map((q, i) => {
-                  const userAnswer = practiceState.userAnswers[i];
-                  const isCorrect = userAnswer === q.correctAnswer;
-                  return (
-                    <View key={i} style={[
-                      styles.reviewQuestion,
-                      { backgroundColor: '#fff', borderColor: isCorrect ? '#10b981' : '#ef4444' }
-                    ]}>
-                      <Text style={[styles.reviewQuestionText, { color: textColor }]}>{i+1}. {q.question}</Text>
-                      {q.options.map((opt, idx) => (
-                        <View key={idx} style={styles.reviewOption}>
-                          <Text style={[
-                            styles.reviewOptionLetter,
-                            { color: idx === q.correctAnswer ? '#10b981' : '#374151' }
-                          ]}>
-                            {String.fromCharCode(65+idx)}) 
-                          </Text>
-                          <Text style={[
-                            styles.reviewOptionText,
-                            { color: idx === userAnswer ? (isCorrect ? '#10b981' : '#ef4444') : '#374151' }
-                          ]}>
-                            {opt}
-                          </Text>
-                          {idx === q.correctAnswer && <Ionicons name="checkmark-circle" size={16} color="#10b981" style={{marginLeft: 4}} />}
-                          {idx === userAnswer && userAnswer !== q.correctAnswer && <Ionicons name="close-circle" size={16} color="#ef4444" style={{marginLeft: 4}} />}
-                        </View>
-                      ))}
-                      <Text style={[
-                        styles.reviewAnswer,
-                        { color: isCorrect ? '#10b981' : '#ef4444' }
+          {/* Modal Content with ScrollView */}
+          <ScrollView 
+            style={styles.modalContent}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.modalContentContainer}
+          >
+            {practiceState.showModeSelector ? (
+              // Mode Selection Screen
+              <View style={styles.modeSelectorContainer}>
+                <View style={styles.modeSelectorHeader}>
+                  <Text style={[styles.modeSelectorTitle, { color: textColor }]}>
+                    Choose Your Quiz Mode
+                  </Text>
+                  <Text style={[styles.modeSelectorSubtitle, { color: iconColor }]}>
+                    {practiceState.questions.length} questions available
+                  </Text>
+                </View>
+                
+                <View style={styles.modeOptions}>
+                  <TouchableOpacity
+                    style={[styles.modeOption, { backgroundColor: softerBackground, borderColor: '#6366f1' }]}
+                    onPress={() => selectMode('preview')}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[styles.modeIcon, { backgroundColor: '#6366f1' }]}>
+                      <Ionicons name="eye-outline" size={24} color="white" />
+                    </View>
+                    <View style={styles.modeContent}>
+                      <Text style={[styles.modeOptionTitle, { color: textColor }]}>Preview Mode</Text>
+                      
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color={iconColor} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.modeOption, { backgroundColor: softerBackground, borderColor: '#10b981' }]}
+                    onPress={() => selectMode('practice')}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[styles.modeIcon, { backgroundColor: '#10b981' }]}>
+                      <Ionicons name="help-circle-outline" size={24} color="white" />
+                    </View>
+                    <View style={styles.modeContent}>
+                      <Text style={[styles.modeOptionTitle, { color: textColor }]}>Practice Mode</Text>
+                      
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color={iconColor} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.modeOption, { backgroundColor: softerBackground, borderColor: '#f093fb' }]}
+                    onPress={() => selectMode('exam')}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[styles.modeIcon, { backgroundColor: '#f093fb' }]}>
+                      <Ionicons name="school-outline" size={24} color="white" />
+                    </View>
+                    <View style={styles.modeContent}>
+                      <Text style={[styles.modeOptionTitle, { color: textColor }]}>Exam Mode</Text>
+                      
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color={iconColor} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : practiceState.isComplete ? (
+              reviewMode ? (
+                // Review Screen
+                <View style={styles.reviewContainer}>
+                  <Text style={[styles.reviewTitle, { color: textColor }]}>Review Answers</Text>
+                  {practiceState.questions.map((q, i) => {
+                    const userAnswer = practiceState.userAnswers[i];
+                    const isCorrect = userAnswer === q.correctAnswer;
+                    return (
+                      <View key={i} style={[
+                        styles.reviewQuestion,
+                        { backgroundColor: '#f8f9fa', borderColor: isCorrect ? '#10b981' : '#ef4444' }
                       ]}>
-                        Your answer: {userAnswer !== -1 ? String.fromCharCode(65+userAnswer) : 'None'} ({isCorrect ? 'Correct' : 'Incorrect'})
+                        <Text style={[styles.reviewQuestionText, { color: textColor }]}>{i+1}. {q.question}</Text>
+                        {q.options.map((opt, idx) => (
+                          <View key={idx} style={styles.reviewOption}>
+                            <Text style={[
+                              styles.reviewOptionLetter,
+                              { color: idx === q.correctAnswer ? '#10b981' : '#374151' }
+                            ]}>
+                              {String.fromCharCode(65+idx)}) 
+                            </Text>
+                            <Text style={[
+                              styles.reviewOptionText,
+                              { color: idx === userAnswer ? (isCorrect ? '#10b981' : '#ef4444') : '#374151' }
+                            ]}>
+                              {opt}
+                            </Text>
+                            {idx === q.correctAnswer && <Ionicons name="checkmark-circle" size={16} color="#10b981" style={{marginLeft: 4}} />}
+                            {idx === userAnswer && userAnswer !== q.correctAnswer && <Ionicons name="close-circle" size={16} color="#ef4444" style={{marginLeft: 4}} />}
+                          </View>
+                        ))}
+                        <Text style={[
+                          styles.reviewAnswer,
+                          { color: isCorrect ? '#10b981' : '#ef4444' }
+                        ]}>
+                          Your answer: {userAnswer !== -1 ? String.fromCharCode(65+userAnswer) : 'None'} ({isCorrect ? 'Correct' : 'Incorrect'})
+                        </Text>
+                      </View>
+                    );
+                  })}
+                  <TouchableOpacity style={[styles.actionButton, {marginTop: 16}]} onPress={() => setReviewMode(false)}>
+                    <Ionicons name="arrow-back" size={20} color="white" />
+                    <Text style={styles.actionButtonText}>Back to Results</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                // Results Screen
+                <View style={styles.resultsContainer}>
+                  <View style={styles.resultsHeader}>
+                    <Ionicons 
+                      name={practiceState.mode === 'preview' ? "eye" : 
+                            practiceState.mode === 'exam' ? "school" :
+                            practiceState.score === practiceState.questions.length ? "trophy" : "star"} 
+                      size={80} 
+                      color={practiceState.mode === 'preview' ? "#6366f1" :
+                             practiceState.mode === 'exam' ? "#f093fb" :
+                             practiceState.score === practiceState.questions.length ? "#fbbf24" : "#10b981"} 
+                    />
+                    <Text style={[styles.resultsTitle, { color: textColor }]}>
+                      {practiceState.mode === 'preview' ? "Preview Complete!" :
+                       practiceState.mode === 'exam' ? "Exam Complete!" :
+                       practiceState.score === practiceState.questions.length ? "Perfect Score!" : "Great Job!"}
+                    </Text>
+                    {practiceState.mode !== 'preview' && (
+                      <>
+                        <Text style={[styles.resultsScore, { color: iconColor }]}>
+                          {practiceState.score} / {practiceState.questions.length} Correct
+                        </Text>
+                        {/* Score breakdown */}
+                        <Text style={[styles.resultsPercentage, { color: iconColor }]}>
+                          {Math.round((practiceState.score / practiceState.questions.length) * 100)}%
+                        </Text>
+                        <Text style={[styles.resultsPercentage, { color: iconColor }]}>
+                          Incorrect: {practiceState.questions.length - practiceState.score}
+                        </Text>
+                        <Text style={[styles.resultsPercentage, { color: iconColor }]}>
+                          Skipped: {practiceState.userAnswers.filter(a => a === -1).length}
+                        </Text>
+                      </>
+                    )}
+                    {practiceState.mode === 'preview' && (
+                      <Text style={[styles.resultsScore, { color: iconColor }]}>
+                        You've reviewed all {practiceState.questions.length} questions
+                      </Text>
+                    )}
+                    {/* Time taken */}
+                    {practiceStartTime && practiceEndTime && (
+                      <Text style={[styles.resultsPercentage, { color: iconColor }]}>
+                        Time: {Math.round((practiceEndTime - practiceStartTime)/1000)}s
+                      </Text>
+                    )}
+                  </View>
+                  <View style={styles.resultsActions}>
+                    <TouchableOpacity
+                      style={[styles.restartButton, 
+                        practiceState.mode === 'preview' ? { backgroundColor: '#6366f1' } : 
+                        practiceState.mode === 'exam' ? { backgroundColor: '#f093fb' } :
+                        { backgroundColor: '#10b981' }
+                      ]}
+                      onPress={restartPractice}
+                    >
+                      <Ionicons name="refresh-outline" size={20} color="white" />
+                      <Text style={styles.restartButtonText}>
+                        {practiceState.mode === 'preview' ? 'Preview Again' : 
+                         practiceState.mode === 'exam' ? 'Retake Exam' : 'Try Again'}
+                      </Text>
+                    </TouchableOpacity>
+                    
+                    {practiceState.mode === 'practice' && (
+                      <TouchableOpacity
+                        style={[styles.restartButton, {backgroundColor: '#6366f1', marginTop: 12}]}
+                        onPress={() => setReviewMode(true)}
+                      >
+                        <Ionicons name="eye-outline" size={20} color="white" />
+                        <Text style={styles.restartButtonText}>Review Answers</Text>
+                      </TouchableOpacity>
+                    )}
+                    
+                    {practiceState.mode === 'practice' && (
+                      <TouchableOpacity
+                        style={[styles.restartButton, {backgroundColor: '#ef4444', marginTop: 12}]}
+                        onPress={retakeIncorrectOnly}
+                        disabled={practiceState.questions.filter((q, i) => practiceState.userAnswers[i] !== q.correctAnswer).length === 0}
+                      >
+                        <Ionicons name="repeat-outline" size={20} color="white" />
+                        <Text style={styles.restartButtonText}>Retake Incorrect Only</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              )
+            ) : (
+              // Question Screen
+              <View style={styles.practiceContent}>
+                {/* Progress Bar */}
+                <View style={styles.progressSection}>
+                  <Text style={[styles.progressText, { color: textColor }]}>
+                    Question {practiceState.currentQuestionIndex + 1} of {practiceState.questions.length}
+                  </Text>
+                  <View style={[styles.progressBarContainer, { backgroundColor: isDark ? '#333333' : '#e5e7eb' }]}>
+                    <View 
+                      style={[
+                        styles.progressBar, 
+                        { 
+                          width: `${((practiceState.currentQuestionIndex + 1) / practiceState.questions.length) * 100}%` 
+                        }
+                      ]} 
+                    />
+                  </View>
+                </View>
+
+                {/* Question */}
+                <View style={styles.questionContainer}>
+                  <Text style={[styles.questionText, { color: textColor }]}>
+                    {practiceState.questions[practiceState.currentQuestionIndex]?.question}
+                  </Text>
+                </View>
+
+                {/* Options */}
+                <View style={styles.optionsContainer}>
+                  {practiceState.questions[practiceState.currentQuestionIndex]?.options.map((option, index) => {
+                    const isSelected = practiceState.userAnswers[practiceState.currentQuestionIndex] === index;
+                    const isCorrect = index === practiceState.questions[practiceState.currentQuestionIndex]?.correctAnswer;
+                    const showCorrect = practiceState.showAnswers;
+                    let optionStyle = [styles.optionButton, { 
+                      borderColor: borderColor, 
+                      backgroundColor: cardBackground 
+                    }];
+                    if (isSelected && showCorrect) {
+                      optionStyle = isCorrect ? 
+                        [styles.optionButtonCorrect, { 
+                          borderColor: '#10b981', 
+                          backgroundColor: isDark ? '#1a3a1a' : '#f0fdf4' 
+                        }] : 
+                        [styles.optionButtonIncorrect, { 
+                          borderColor: '#ef4444', 
+                          backgroundColor: isDark ? '#3a1a1a' : '#fef2f2' 
+                        }];
+                    } else if (showCorrect && isCorrect) {
+                      optionStyle = [styles.optionButtonCorrect, { 
+                        borderColor: '#10b981', 
+                        backgroundColor: isDark ? '#1a3a1a' : '#f0fdf4' 
+                      }];
+                    } else if (isSelected) {
+                      optionStyle = [styles.optionButtonSelected, { 
+                        borderColor: '#f093fb', 
+                        backgroundColor: isDark ? '#2a1a3a' : '#faf5ff' 
+                      }];
+                    }
+                    return (
+                      <TouchableOpacity
+                        key={index}
+                        style={optionStyle}
+                        onPress={() => selectAnswer(index)}
+                        disabled={practiceState.showAnswers}
+                      >
+                        <Text style={styles.optionLetter}>
+                          {String.fromCharCode(65 + index)}
+                        </Text>
+                        <Text style={[styles.optionText, { color: textColor }]}>{option}</Text>
+                        {showCorrect && isCorrect && (
+                          <Ionicons name="checkmark-circle" size={20} color="#10b981" />
+                        )}
+                        {showCorrect && isSelected && !isCorrect && (
+                          <Ionicons name="close-circle" size={20} color="#ef4444" />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {/* Action Buttons */}
+                <View style={styles.practiceActions}>
+                  {/* Show Answer button (only for practice mode, not exam or preview) */}
+                  {!practiceState.showAnswers && practiceState.mode === 'practice' && (
+                    <TouchableOpacity
+                      style={[
+                        styles.actionButton,
+                        practiceState.userAnswers[practiceState.currentQuestionIndex] === -1 && styles.actionButtonDisabled
+                      ]}
+                      onPress={showAnswer}
+                      disabled={practiceState.userAnswers[practiceState.currentQuestionIndex] === -1}
+                    >
+                      <Ionicons name="eye-outline" size={20} color="white" />
+                      <Text style={styles.actionButtonText}>Show Answer</Text>
+                    </TouchableOpacity>
+                  )}
+                  
+                  {/* Navigation Buttons */}
+                  <View style={styles.navigationButtons}>
+                    <TouchableOpacity
+                      style={[
+                        styles.navButton,
+                        { backgroundColor: softBackground },
+                        practiceState.currentQuestionIndex === 0 && styles.navButtonDisabled
+                      ]}
+                      onPress={previousQuestion}
+                      disabled={practiceState.currentQuestionIndex === 0}
+                    >
+                      <Ionicons name="chevron-back" size={20} color="#6b7280" />
+                      <Text style={[styles.navButtonText, { color: '#6b7280' }]}>Previous</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity
+                      style={[
+                        styles.navButton,
+                        { backgroundColor: softBackground },
+                        // In preview mode, always allow navigation
+                        // In exam mode, require answer selection
+                        practiceState.mode === 'preview' ? {} : 
+                        practiceState.mode === 'exam' && practiceState.userAnswers[practiceState.currentQuestionIndex] === -1 ? styles.navButtonDisabled : {}
+                      ]}
+                      onPress={nextQuestion}
+                      disabled={practiceState.mode === 'exam' && practiceState.userAnswers[practiceState.currentQuestionIndex] === -1}
+                    >
+                      <Text style={[styles.navButtonText, { color: '#6b7280' }]}>
+                        {practiceState.currentQuestionIndex === practiceState.questions.length - 1 ? 'Finish' : 'Next'}
+                      </Text>
+                      <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+                    </TouchableOpacity>
+                  </View>
+                  
+                  {/* Mode indicators */}
+                  {practiceState.mode === 'preview' && (
+                    <View style={styles.previewIndicator}>
+                      <Ionicons name="eye-outline" size={16} color="#6366f1" />
+                      <Text style={[styles.previewText, { color: '#6366f1' }]}>
+                        Preview Mode - All answers visible
                       </Text>
                     </View>
-                  );
-                })}
-                <TouchableOpacity style={[styles.actionButton, {marginTop: 16}]} onPress={() => setReviewMode(false)}>
-                  <Ionicons name="arrow-back" size={20} color="white" />
-                  <Text style={styles.actionButtonText}>Back to Results</Text>
-                </TouchableOpacity>
-              </ScrollView>
-            ) : (
-              // Results Screen
-              <View style={styles.resultsContainer}>
-                <View style={styles.resultsHeader}>
-                  <Ionicons 
-                    name={practiceState.score === practiceState.questions.length ? "trophy" : "star"} 
-                    size={80} 
-                    color={practiceState.score === practiceState.questions.length ? "#fbbf24" : "#10b981"} 
-                  />
-                  <Text style={[styles.resultsTitle, { color: textColor }]}>
-                    {practiceState.score === practiceState.questions.length ? "Perfect Score!" : "Great Job!"}
-                  </Text>
-                  <Text style={[styles.resultsScore, { color: iconColor }]}>
-                    {practiceState.score} / {practiceState.questions.length} Correct
-                  </Text>
-                  {/* Score breakdown */}
-                  <Text style={[styles.resultsPercentage, { color: iconColor }]}>
-                    {Math.round((practiceState.score / practiceState.questions.length) * 100)}%
-                  </Text>
-                  <Text style={[styles.resultsPercentage, { color: iconColor }]}>
-                    Incorrect: {practiceState.questions.length - practiceState.score}
-                  </Text>
-                  <Text style={[styles.resultsPercentage, { color: iconColor }]}>
-                    Skipped: {practiceState.userAnswers.filter(a => a === -1).length}
-                  </Text>
-                  {/* Time taken */}
-                  {practiceStartTime && practiceEndTime && (
-                    <Text style={[styles.resultsPercentage, { color: iconColor }]}>
-                      Time: {Math.round((practiceEndTime - practiceStartTime)/1000)}s
-                    </Text>
+                  )}
+                  
+                  {practiceState.mode === 'exam' && (
+                    <View style={styles.examIndicator}>
+                      <Ionicons name="school-outline" size={16} color="#f093fb" />
+                      <Text style={[styles.examText, { color: '#f093fb' }]}>
+                        Exam Mode - No hints available
+                      </Text>
+                    </View>
+                  )}
+                  
+                  {practiceState.mode === 'practice' && (
+                    <View style={styles.practiceIndicator}>
+                      <Ionicons name="help-circle-outline" size={16} color="#10b981" />
+                      <Text style={[styles.practiceText, { color: '#10b981' }]}>
+                        Practice Mode - Hints and feedback available
+                      </Text>
+                    </View>
                   )}
                 </View>
-                <View style={styles.resultsActions}>
-                  <TouchableOpacity
-                    style={styles.restartButton}
-                    onPress={restartPractice}
-                  >
-                    <Ionicons name="refresh-outline" size={20} color="white" />
-                    <Text style={styles.restartButtonText}>Try Again</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.restartButton, {backgroundColor: '#6366f1', marginTop: 12}]}
-                    onPress={() => setReviewMode(true)}
-                  >
-                    <Ionicons name="eye-outline" size={20} color="white" />
-                    <Text style={styles.restartButtonText}>Review Answers</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.restartButton, {backgroundColor: '#ef4444', marginTop: 12}]}
-                    onPress={retakeIncorrectOnly}
-                    disabled={practiceState.questions.filter((q, i) => practiceState.userAnswers[i] !== q.correctAnswer).length === 0}
-                  >
-                    <Ionicons name="repeat-outline" size={20} color="white" />
-                    <Text style={styles.restartButtonText}>Retake Incorrect Only</Text>
-                  </TouchableOpacity>
-                </View>
               </View>
-            )
-          ) : (
-            // Question Screen
-            <View style={styles.practiceContent}>
-              {/* Progress Bar */}
-              <View style={styles.progressSection}>
-                <Text style={[styles.progressText, { color: textColor }]}>
-                  Question {practiceState.currentQuestionIndex + 1} of {practiceState.questions.length}
-                </Text>
-                <View style={styles.progressBarContainer}>
-                  <View 
-                    style={[
-                      styles.progressBar,
-                      { width: `${((practiceState.currentQuestionIndex + 1) / practiceState.questions.length) * 100}%` }
-                    ]} 
-                  />
-                </View>
-              </View>
-
-              {/* Question */}
-              <View style={styles.questionContainer}>
-                <Text style={[styles.questionText, { color: textColor }]}>
-                  {practiceState.questions[practiceState.currentQuestionIndex]?.question}
-                </Text>
-              </View>
-
-              {/* Options */}
-              <View style={styles.optionsContainer}>
-                {practiceState.questions[practiceState.currentQuestionIndex]?.options.map((option, index) => {
-                  const isSelected = practiceState.userAnswers[practiceState.currentQuestionIndex] === index;
-                  const isCorrect = index === practiceState.questions[practiceState.currentQuestionIndex]?.correctAnswer;
-                  const showCorrect = practiceState.showAnswers;
-                  let optionStyle = [styles.optionButton, { borderColor: '#e5e7eb' }];
-                  if (isSelected && showCorrect) {
-                    optionStyle = isCorrect ? [styles.optionButtonCorrect, { borderColor: '#10b981',  }] : [styles.optionButtonIncorrect, { borderColor: '#ef4444',  }];
-                  } else if (showCorrect && isCorrect) {
-                    optionStyle = [styles.optionButtonCorrect, { borderColor: '#10b981',  }];
-                  } else if (isSelected) {
-                    optionStyle = [styles.optionButtonSelected, { borderColor: '#f093fb', }];
-                  }
-                  return (
-                    <TouchableOpacity
-                      key={index}
-                      style={optionStyle}
-                      onPress={() => selectAnswer(index)}
-                      disabled={practiceState.showAnswers}
-                    >
-                      <Text style={styles.optionLetter}>
-                        {String.fromCharCode(65 + index)}
-                      </Text>
-                      <Text style={[styles.optionText, { color: textColor }]}>{option}</Text>
-                      {showCorrect && isCorrect && (
-                        <Ionicons name="checkmark-circle" size={20} color="#10b981" />
-                      )}
-                      {showCorrect && isSelected && !isCorrect && (
-                        <Ionicons name="close-circle" size={20} color="#ef4444" />
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              {/* Action Buttons */}
-              <View style={styles.practiceActions}>
-                {/* Show Answer button (optional) */}
-                {!practiceState.showAnswers && (
-                  <TouchableOpacity
-                    style={[
-                      styles.actionButton,
-                      practiceState.userAnswers[practiceState.currentQuestionIndex] === -1 && styles.actionButtonDisabled
-                    ]}
-                    onPress={showAnswer}
-                    disabled={practiceState.userAnswers[practiceState.currentQuestionIndex] === -1}
-                  >
-                    <Ionicons name="eye-outline" size={20} color="white" />
-                    <Text style={styles.actionButtonText}>Show Answer</Text>
-                  </TouchableOpacity>
-                )}
-                {/* Next/Finish always available after answer selected */}
-                <View style={styles.navigationButtons}>
-                  <TouchableOpacity
-                    style={[
-                      styles.navButton,
-                      { backgroundColor: '#f0f0ff' },
-                      practiceState.currentQuestionIndex === 0 && styles.navButtonDisabled
-                    ]}
-                    onPress={previousQuestion}
-                    disabled={practiceState.currentQuestionIndex === 0}
-                  >
-                    <Ionicons name="chevron-back" size={20} color="#6b7280" />
-                    <Text style={[styles.navButtonText, { color: '#6b7280' }]}>Previous</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.navButton,
-                      { backgroundColor: '#f0f0ff' },
-                      practiceState.userAnswers[practiceState.currentQuestionIndex] === -1 && styles.navButtonDisabled
-                    ]}
-                    onPress={nextQuestion}
-                    disabled={practiceState.userAnswers[practiceState.currentQuestionIndex] === -1}
-                  >
-                    <Text style={[styles.navButtonText, { color: '#6b7280' }]}>
-                      {practiceState.currentQuestionIndex === practiceState.questions.length - 1 ? 'Finish' : 'Next'}
-                    </Text>
-                    <Ionicons name="chevron-forward" size={20} color="#6b7280" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-          )}
+            )}
+          </ScrollView>
         </View>
-      </SafeAreaView>
+      </View>
     </Modal>
   );
 }
@@ -479,15 +715,18 @@ export default function PracticeQuizModal({
 const styles = StyleSheet.create({
   modalSafeAreView: {
     flex: 1,
+    backgroundColor: 'transparent',
   },
   modalContainer: {
     flex: 1,
+    backgroundColor: 'transparent',
   },
   modalHeader: {
-    paddingTop: Platform.OS === 'ios' ? 12 : 28,
+    paddingTop: Platform.OS === 'ios' ? 60 : 50,
     paddingHorizontal: 20,
     paddingBottom: 16,
     borderBottomWidth: 1,
+    backgroundColor: 'transparent',
   },
   modalTitleContainer: {
     flexDirection: 'row',
@@ -508,7 +747,8 @@ const styles = StyleSheet.create({
   },
   practiceContent: {
     flex: 1,
-    padding: 40,
+    padding: 20,
+    paddingBottom: 0,
   },
   progressSection: {
     marginBottom: 24,
@@ -629,9 +869,8 @@ const styles = StyleSheet.create({
   },
   resultsContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
+    padding: 20,
+    paddingBottom: 0,
   },
   resultsHeader: {
     marginBottom: 24,
@@ -699,5 +938,145 @@ const styles = StyleSheet.create({
   reviewAnswer: {
     marginTop: 4,
     fontWeight: '500',
+  },
+  modeIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  modeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  modeText: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  backToModeButton: {
+    padding: 4,
+  },
+  backToModeText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  modeSelectorContainer: {
+    flex: 1,
+    padding: 20,
+    paddingBottom: 0,
+  },
+  modeSelectorHeader: {
+    marginBottom: 24,
+  },
+  modeSelectorTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  modeSelectorSubtitle: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  modeOptions: {
+    marginTop: 24,
+    gap: 16,
+  },
+  modeOption: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 20,
+    borderWidth: 2,
+    borderRadius: 16,
+    marginBottom: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  modeIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  modeContent: {
+    flex: 1,
+    marginRight: 12,
+  },
+  modeOptionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  modeOptionDescription: {
+    fontSize: 15,
+    fontWeight: '500',
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  modeFeatures: {
+    marginTop: 8,
+  },
+  modeFeature: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  previewIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  previewText: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 8,
+  },
+  examIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  examText: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 8,
+  },
+  practiceIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  practiceText: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 8,
+  },
+  modalContent: {
+    flex: 1,
+  },
+  modalContentContainer: {
+    flexGrow: 1,
+    paddingBottom: 0,
+  },
+  reviewContainer: {
+    flex: 1,
+    padding: 20,
+    paddingBottom: 0,
   },
 }); 

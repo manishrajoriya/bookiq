@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import "react-native-reanimated";
 
+import { AuthProvider } from '../providers/AuthProvider';
 import { ThemeProvider } from "../providers/ThemeProvider";
 
 import { useColorScheme } from "@/hooks/useColorScheme";
@@ -34,28 +35,30 @@ export default function RootLayout() {
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider>
-        <GlobalThemeProvider>
-          <PurchasesProvider>
-            <Stack screenOptions={{ animation: 'fade', animationDuration: 300, animationTypeForReplace: 'push' }}>
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen name="notes" options={{ headerShown: false }} />
-              <Stack.Screen name="note/[id]" options={{ headerShown: false }} />
-              <Stack.Screen name="study-notes" options={{ headerShown: false }} />
-              <Stack.Screen name="quiz-maker" options={{ headerShown: false }} />
-              <Stack.Screen name="flash-cards" options={{ headerShown: false }} />
-              <Stack.Screen name="mathematics" options={{ headerShown: false }} />
-              <Stack.Screen name="biology" options={{ headerShown: false }} />
-              <Stack.Screen name="chemistry" options={{ headerShown: false }} />
-              <Stack.Screen name="physics" options={{ headerShown: false }} />
-              <Stack.Screen name="mind-maps" options={{ headerShown: false }} />
-              <Stack.Screen name="paywall" options={{ headerShown: false }} />
-              <Stack.Screen name="+not-found" />
-            </Stack>
-          </PurchasesProvider>
-        </GlobalThemeProvider>
-      </ThemeProvider>
-    </GestureHandlerRootView>
+    <AuthProvider>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <ThemeProvider>
+          <GlobalThemeProvider>
+            <PurchasesProvider>
+              <Stack screenOptions={{ animation: 'none', animationDuration: 500, animationTypeForReplace: 'push' }}>
+                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen name="notes" options={{ headerShown: false }} />
+                <Stack.Screen name="note/[id]" options={{ headerShown: false }} />
+                <Stack.Screen name="study-notes" options={{ headerShown: false }} />
+                <Stack.Screen name="quiz-maker" options={{ headerShown: false }} />
+                <Stack.Screen name="flash-cards" options={{ headerShown: false }} />
+                <Stack.Screen name="mathematics" options={{ headerShown: false }} />
+                <Stack.Screen name="biology" options={{ headerShown: false }} />
+                <Stack.Screen name="chemistry" options={{ headerShown: false }} />
+                <Stack.Screen name="physics" options={{ headerShown: false }} />
+                <Stack.Screen name="mind-maps" options={{ headerShown: false }} />
+                <Stack.Screen name="paywall" options={{ headerShown: false }} />
+                <Stack.Screen name="+not-found" />
+              </Stack>
+            </PurchasesProvider>
+          </GlobalThemeProvider>
+        </ThemeProvider>
+      </GestureHandlerRootView>
+    </AuthProvider>
   );
 }

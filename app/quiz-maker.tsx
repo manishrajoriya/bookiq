@@ -20,10 +20,30 @@ import NoteReaderModal from '../components/NoteReaderModal';
 import PracticeQuizModal from '../components/PracticeQuizModal';
 import QuizGenerationModal from '../components/QuizGenerationModal';
 import ScanQuizModal from '../components/ScanQuizModal';
-import { useThemeColor } from '../hooks/useThemeColor';
+import { useThemeContext } from '../providers/ThemeProvider';
 import { getAllQuizzes } from '../services/historyStorage';
 
 const { width, height } = Dimensions.get('window');
+
+// Dynamic color scheme based on theme
+const getColors = (isDark: boolean) => ({
+  primary: '#f093fb',
+  secondary: '#f093fb',
+  accentColor: '#f093fb',
+  dangerColor: '#ff6b6b',
+  successColor: '#43e97b',
+  backgroundColor: isDark ? '#0f0f0f' : '#f8f9fa',
+  cardColor: isDark ? '#1a1a1a' : '#ffffff',
+  headerBackground: isDark ? '#1a1a1a' : '#ffffff',
+  borderColor: isDark ? '#333333' : '#f0f0f0',
+  iconColor: isDark ? '#9BA1A6' : '#888',
+  textColor: {
+    primary: isDark ? '#ffffff' : '#1a1a1a',
+    secondary: isDark ? '#cccccc' : '#666',
+    light: isDark ? '#999999' : '#aaa',
+    white: '#ffffff',
+  },
+});
 
 // Enhanced interfaces
 interface Quiz {
@@ -74,10 +94,14 @@ const QuizMaker = () => {
   });
 
   // Animation refs
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(new Animated.Value(1)).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const scrollY = useRef(new Animated.Value(0)).current;
 
+  // Theme context
+  const { resolvedTheme } = useThemeContext();
+  const COLORS = getColors(resolvedTheme === 'dark');
+  
   // Enhanced error handling
   const handleError = (type: ErrorState['type'], message: string, retryable: boolean = true) => {
     setError({ type, message, retryable });
@@ -96,18 +120,7 @@ const QuizMaker = () => {
       clearError();
       
       const quizzesData = await getAllQuizzes();
-      
-      const enhancedQuizzes = quizzesData.map(quiz => ({
-        ...quiz,
-        createdAt: new Date(quiz.createdAt).toLocaleDateString('en-US', {
-          month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
-        })
-      }));
-      
-      setQuizzes(enhancedQuizzes);
+      setQuizzes(quizzesData);
     } catch (error) {
       console.error('Failed to load quizzes:', error);
       handleError('network', 'Failed to load quizzes. Please check your connection and try again.', true);
@@ -213,97 +226,137 @@ const QuizMaker = () => {
     setSelectedQuiz(null);
   };
 
-  // Get theme colors
-  const backgroundColor = useThemeColor({}, 'background');
-  const textColor = useThemeColor({}, 'text');
-  const borderColor = useThemeColor({}, 'icon');
-  const cardColor = useThemeColor({}, 'background');
-  const iconColor = useThemeColor({}, 'icon');
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInHours = Math.abs(now.getTime() - date.getTime()) / (1000 * 60 * 60);
+    
+    if (diffInHours < 24) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } else if (diffInHours < 168) { // 7 days
+      return date.toLocaleDateString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+    }
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  };
 
-  const renderNoteItem = ({ item, index }: { item: Quiz; index: number }) => (
-    <View style={[styles.noteCardContainer, { backgroundColor: cardColor, borderColor }]}>
-      <TouchableOpacity 
-        onPress={() => openNotePreview(item)}
-        activeOpacity={0.8}
-        style={styles.noteCard}
+  const getQuestionCount = (content: string) => {
+    const matches = content.match(/^\d+\./gm);
+    return matches ? matches.length : 0;
+  };
+
+  const renderQuizItem = ({ item, index }: { item: Quiz; index: number }) => {
+    const questionCount = getQuestionCount(item.content || '');
+    const hasAnswers = (item.content || '').includes('ANSWERS:');
+    
+    return (
+      <Animated.View
+        style={[
+          styles.quizCard,
+          { 
+            backgroundColor: COLORS.cardColor, 
+            borderColor: COLORS.borderColor,
+            transform: [{ scale: fadeAnim }]
+          }
+        ]}
       >
-        <View style={styles.noteCardContent}>
-          <View style={styles.noteHeader}>
-            <Text style={[styles.noteTitle, { color: textColor }]} numberOfLines={1} ellipsizeMode="tail">
-              {item.title}
-            </Text>
-            <View style={styles.noteMetadata}>
-              <Text style={[styles.wordCount, { color: iconColor }]}>{item.quiz_type.replace('-', ' ')}</Text>
+        <TouchableOpacity 
+          onPress={() => openNotePreview(item)}
+          activeOpacity={0.8}
+          style={styles.quizContent}
+        >
+          <View style={styles.quizHeader}>
+            <View style={styles.quizTitleContainer}>
+              <Text style={[styles.quizTitle, { color: COLORS.textColor.primary }]} numberOfLines={1}>
+                {item.title || 'Untitled Quiz'}
+              </Text>
+              {hasAnswers && (
+                <View style={[styles.answersBadge, { backgroundColor: COLORS.successColor }]}>
+                  <Ionicons name="checkmark-circle" size={12} color={COLORS.textColor.white} />
+                </View>
+              )}
             </View>
+            <Text style={[styles.quizDate, { color: COLORS.textColor.light }]}>
+              {formatDate(item.createdAt)}
+            </Text>
           </View>
           
           <Text 
-            numberOfLines={3} 
-            style={[styles.noteContent, { color: textColor }]}
+            numberOfLines={2} 
+            style={[styles.quizContentText, { color: COLORS.textColor.secondary }]}
             ellipsizeMode="tail"
           >
-            {item.content}
+            {(item.content || '').length > 100 ? (item.content || '').substring(0, 100) + '...' : (item.content || 'No content')}
           </Text>
           
-          <View style={styles.noteFooter}>
-            <Text style={[styles.noteDate, { color: iconColor }]}>
-              {item.createdAt}
-            </Text>
-            <View style={styles.noteActions}>
-              <TouchableOpacity 
-                style={styles.practiceButton}
-                onPress={() => startPractice(item)}
-              >
-                <Ionicons name="play-outline" size={16} color={iconColor} />
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.quizButton}
-                onPress={() => openQuizModal(item)}
-              >
-                <Ionicons name="help-circle-outline" size={16} color={iconColor} />
-              </TouchableOpacity>
+          <View style={styles.quizFooter}>
+            <View style={styles.quizStats}>
+              <View style={[styles.statItem, { backgroundColor: COLORS.backgroundColor }]}>
+                <Ionicons name="help-circle" size={14} color={COLORS.accentColor} />
+                <Text style={[styles.statText, { color: COLORS.textColor.secondary }]}>
+                  {questionCount} questions
+                </Text>
+              </View>
+              <View style={[styles.statItem, { backgroundColor: COLORS.backgroundColor }]}>
+                <Ionicons name="document-text" size={14} color={COLORS.accentColor} />
+                <Text style={[styles.statText, { color: COLORS.textColor.secondary }]}>
+                  {(item.quiz_type || 'multiple-choice').replace('-', ' ')}
+                </Text>
+              </View>
             </View>
           </View>
+        </TouchableOpacity>
+        
+        <View style={styles.quizActions}>
+          <TouchableOpacity 
+            style={[styles.actionButton, { backgroundColor: COLORS.successColor }]}
+            onPress={() => startPractice(item)}
+          >
+            <Ionicons name="play" size={18} color={COLORS.textColor.white} />
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.actionButton, { backgroundColor: COLORS.backgroundColor }]}
+            onPress={() => openQuizModal(item)}
+          >
+            <Ionicons name="help-circle" size={18} color={COLORS.accentColor} />
+          </TouchableOpacity>
         </View>
-      </TouchableOpacity>
-    </View>
-  );
+      </Animated.View>
+    );
+  };
 
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
       <Animated.View
         style={[
           styles.emptyIconContainer,
-          { transform: [{ scale: scaleAnim }] }
+          { backgroundColor: COLORS.backgroundColor, transform: [{ scale: scaleAnim }] }
         ]}
       >
-        <Ionicons name="help-circle-outline" size={80} color="#f0f0ff" />
+        <Ionicons name="help-circle" size={80} color={COLORS.accentColor} />
       </Animated.View>
-      <Text style={styles.emptyTitle}>No Saved Quizzes</Text>
-      <Text style={styles.emptySubtitle}>
+      <Text style={[styles.emptyTitle, { color: COLORS.textColor.primary }]}>No Saved Quizzes</Text>
+      <Text style={[styles.emptySubtitle, { color: COLORS.textColor.secondary }]}>
         Generate quizzes from your notes, scan documents, or create them manually
       </Text>
       <View style={styles.emptyButtons}>
         <TouchableOpacity 
-          style={styles.manualQuizEmptyButton}
+          style={[styles.emptyButton, { backgroundColor: COLORS.accentColor }]}
           onPress={openManualQuizModal}
           activeOpacity={0.8}
         >
-          <Ionicons name="add-outline" size={20} color="#fff" />
-          <Text style={styles.manualQuizEmptyButtonText}>Create Quiz</Text>
+          <Ionicons name="add" size={20} color={COLORS.textColor.white} />
+          <Text style={[styles.emptyButtonText, { color: COLORS.textColor.white }]}>Create Quiz</Text>
         </TouchableOpacity>
         <TouchableOpacity 
-          style={styles.scanEmptyButton}
+          style={[styles.emptyButton, { backgroundColor: COLORS.accentColor }]}
           onPress={openScanQuizModal}
           activeOpacity={0.8}
         >
-          <Ionicons name="scan-outline" size={20} color="#fff" />
-          <Text style={styles.scanEmptyButtonText}>Scan Document</Text>
+          <Ionicons name="scan" size={20} color={COLORS.textColor.white} />
+          <Text style={[styles.emptyButtonText, { color: COLORS.textColor.white }]}>Scan Document</Text>
         </TouchableOpacity>
       </View>
-      <Text style={styles.emptyNote}>
-        💡 If you're experiencing database issues, try the red reset button in the header
-      </Text>
     </View>
   );
 
@@ -311,58 +364,74 @@ const QuizMaker = () => {
     if (!error.type) return null;
     
     return (
-      <View style={styles.errorBanner}>
+      <View style={[styles.errorBanner, { backgroundColor: COLORS.backgroundColor, borderBottomColor: COLORS.borderColor }]}>
         <View style={styles.errorContent}>
           <Ionicons 
-            name="alert-circle-outline" 
+            name="alert-circle" 
             size={20} 
-            color="#ef4444" 
+            color={COLORS.dangerColor} 
           />
-          <Text style={[styles.errorMessage, { color: textColor }]}>{error.message}</Text>
+          <Text style={[styles.errorMessage, { color: COLORS.dangerColor }]}>{error.message}</Text>
         </View>
         {error.retryable && (
           <TouchableOpacity 
-            style={styles.retryButton}
+            style={[styles.retryButton, { backgroundColor: COLORS.dangerColor }]}
             onPress={retryLastAction}
           >
-            <Text style={[styles.retryButtonText, { color: textColor }]}>Retry</Text>
+            <Text style={[styles.retryButtonText, { color: COLORS.textColor.white }]}>Retry</Text>
           </TouchableOpacity>
         )}
         <TouchableOpacity 
           style={styles.dismissButton}
           onPress={clearError}
         >
-          <Ionicons name="close" size={16} color="#ef4444" />
+          <Ionicons name="close" size={16} color={COLORS.dangerColor} />
         </TouchableOpacity>
       </View>
     );
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor }]}>
-      <StatusBar barStyle={backgroundColor === '#fff' ? 'dark-content' : 'light-content'} backgroundColor={backgroundColor} />
+    <SafeAreaView style={[styles.container, { backgroundColor: COLORS.backgroundColor }]}>
+      <StatusBar barStyle={resolvedTheme === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={COLORS.headerBackground} />
       
-      {/* Header with animated shadow */}
-      <Animated.View style={[styles.header, { backgroundColor, borderBottomColor: borderColor, shadowColor: iconColor }]}>
+      {/* Header */}
+      <Animated.View style={[
+        styles.header, 
+        { 
+          backgroundColor: COLORS.headerBackground, 
+          borderBottomColor: COLORS.borderColor,
+          shadowOpacity: scrollY.interpolate({
+            inputRange: [0, 10],
+            outputRange: [0, 0.1],
+            extrapolate: 'clamp'
+          }),
+          elevation: scrollY.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0, 2],
+            extrapolate: 'clamp'
+          })
+        }
+      ]}>
         <View style={styles.headerContent}>
           <View style={styles.headerText}>
-            <Text style={[styles.headerTitle, { color: textColor }]}>Quiz Maker</Text>
-            <Text style={[styles.headerSubtitle, { color: iconColor }]}>
+            <Text style={[styles.headerTitle, { color: COLORS.textColor.primary }]}>Quiz Maker</Text>
+            <Text style={[styles.headerSubtitle, { color: COLORS.textColor.secondary }]}>
               {quizzes.length} saved {quizzes.length === 1 ? 'quiz' : 'quizzes'}
             </Text>
           </View>
           <View style={styles.headerButtons}>
             <TouchableOpacity 
-              style={styles.manualQuizButton}
+              style={[styles.headerButton, { backgroundColor: COLORS.backgroundColor }]}
               onPress={openManualQuizModal}
             >
-              <Ionicons name="add-outline" size={24} color={iconColor} />
+              <Ionicons name="add" size={24} color={COLORS.accentColor} />
             </TouchableOpacity>
             <TouchableOpacity 
-              style={styles.scanButton}
+              style={[styles.headerButton, { backgroundColor: COLORS.backgroundColor }]}
               onPress={openScanQuizModal}
             >
-              <Ionicons name="scan-outline" size={24} color={iconColor} />
+              <Ionicons name="scan" size={24} color={COLORS.accentColor} />
             </TouchableOpacity>
           </View>
         </View>
@@ -374,8 +443,8 @@ const QuizMaker = () => {
       {/* Content */}
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#f093fb" />
-          <Text style={styles.loadingText}>Loading your quizzes...</Text>
+          <ActivityIndicator size="large" color={COLORS.accentColor} />
+          <Text style={[styles.loadingText, { color: COLORS.accentColor }]}>Loading your quizzes...</Text>
         </View>
       ) : quizzes.length === 0 ? (
         renderEmptyState()
@@ -384,7 +453,7 @@ const QuizMaker = () => {
           data={quizzes}
           keyExtractor={(item) => `quiz-${item.id}`}
           contentContainerStyle={styles.listContent}
-          renderItem={renderNoteItem}
+          renderItem={renderQuizItem}
           showsVerticalScrollIndicator={false}
           onScrollBeginDrag={() => clearError()}
           onScroll={Animated.event(
@@ -394,6 +463,7 @@ const QuizMaker = () => {
           scrollEventThrottle={16}
           ListHeaderComponent={<View style={{ height: 8 }} />}
           ListFooterComponent={<View style={{ height: 80 }} />}
+          ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
         />
       )}
 
@@ -416,15 +486,15 @@ const QuizMaker = () => {
         }
       ]}>
         <TouchableOpacity 
-          style={styles.fab} 
+          style={[styles.fab, { backgroundColor: COLORS.accentColor }]} 
           onPress={openScanQuizModal}
           activeOpacity={0.9}
         >
-          <Ionicons name="scan-outline" size={24} color="#fff" />
+          <Ionicons name="scan" size={24} color={COLORS.textColor.white} />
         </TouchableOpacity>
       </Animated.View>
 
-      {/* Note Preview Modal */}
+      {/* Modals */}
       <NoteReaderModal
         visible={previewModalVisible}
         onClose={() => setPreviewModalVisible(false)}
@@ -433,7 +503,6 @@ const QuizMaker = () => {
         isQuiz={true}
       />
 
-      {/* Quiz Generation Modal */}
       <QuizGenerationModal
         visible={quizGenerationModalVisible}
         onClose={closeQuizModal}
@@ -444,21 +513,18 @@ const QuizMaker = () => {
         onQuizSaved={handleQuizSaved}
       />
 
-      {/* Manual Quiz Creation Modal */}
       <ManualQuizModal
         visible={manualQuizModalVisible}
         onClose={() => setManualQuizModalVisible(false)}
         onQuizSaved={handleQuizSaved}
       />
 
-      {/* Scan Quiz Modal */}
       <ScanQuizModal
         visible={scanQuizModalVisible}
         onClose={() => setScanQuizModalVisible(false)}
         onQuizSaved={handleQuizSaved}
       />
 
-      {/* Practice Quiz Modal */}
       <PracticeQuizModal
         visible={practiceModalVisible}
         onClose={closePracticeModal}
@@ -471,15 +537,12 @@ const QuizMaker = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9fafb',
   },
   header: {
     paddingTop: Platform.OS === 'ios' ? 60 : 50,
     paddingBottom: 16,
-    paddingHorizontal: 24,
-    backgroundColor: '#fff',
+    paddingHorizontal: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 4,
@@ -496,25 +559,23 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#111827',
-    marginBottom: 2,
+    marginBottom: 4,
   },
   headerSubtitle: {
-    fontSize: 14,
-    color: '#6b7280',
+    fontSize: 16,
     fontWeight: '500',
   },
   headerButtons: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
   },
-  manualQuizButton: {
-    padding: 4,
-    marginLeft: 8,
-  },
-  scanButton: {
-    padding: 4,
-    marginLeft: 8,
+  headerButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   loadingContainer: {
     flex: 1,
@@ -525,7 +586,6 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#f093fb',
     fontWeight: '500',
   },
   emptyState: {
@@ -536,7 +596,6 @@ const styles = StyleSheet.create({
   },
   emptyIconContainer: {
     marginBottom: 24,
-    backgroundColor: '#f0f0ff',
     width: 120,
     height: 120,
     borderRadius: 60,
@@ -544,15 +603,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyTitle: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '700',
-    color: '#111827',
     marginBottom: 8,
     textAlign: 'center',
   },
   emptySubtitle: {
     fontSize: 16,
-    color: '#6b7280',
     textAlign: 'center',
     lineHeight: 24,
     marginBottom: 32,
@@ -560,127 +617,110 @@ const styles = StyleSheet.create({
   },
   emptyButtons: {
     flexDirection: 'row',
+    gap: 12,
+  },
+  emptyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
     gap: 8,
   },
-  manualQuizEmptyButton: {
-    backgroundColor: '#f093fb',
-    padding: 12,
-    borderRadius: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  manualQuizEmptyButtonText: {
-    color: 'white',
+  emptyButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    marginLeft: 8,
-  },
-  scanEmptyButton: {
-    backgroundColor: '#f093fb',
-    padding: 12,
-    borderRadius: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scanEmptyButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  emptyNote: {
-    fontSize: 14,
-    color: '#6b7280',
-    textAlign: 'center',
-    lineHeight: 24,
-    marginTop: 16,
   },
   listContent: {
-    paddingHorizontal: 16,
+    padding: 20,
   },
-  noteCardContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 1,
+  quizCard: {
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#f3f4f6',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    overflow: 'hidden',
   },
-  noteCard: {
-    flex: 1,
+  quizContent: {
+    padding: 20,
   },
-  noteCardContent: {
-    padding: 16,
-  },
-  noteHeader: {
+  quizHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 12,
   },
-  noteTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
+  quizTitleContainer: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     marginRight: 12,
   },
-  noteMetadata: {
-    alignItems: 'flex-end',
-  },
-  wordCount: {
-    fontSize: 12,
-    color: '#f093fb',
+  quizTitle: {
+    fontSize: 18,
     fontWeight: '600',
-    backgroundColor: '#f0f0ff',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    flex: 1,
   },
-  noteContent: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: '#4b5563',
+  answersBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  quizDate: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  quizContentText: {
+    fontSize: 15,
+    lineHeight: 22,
     marginBottom: 16,
   },
-  noteFooter: {
+  quizFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  noteDate: {
-    fontSize: 12,
-    color: '#9ca3af',
-    fontWeight: '500',
+  quizStats: {
+    flexDirection: 'row',
+    gap: 8,
   },
-  noteActions: {
+  statItem: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    gap: 4,
   },
-  practiceButton: {
-    padding: 4,
-    marginLeft: 8,
+  statText: {
+    fontSize: 12,
+    fontWeight: '500',
   },
-  quizButton: {
-    padding: 4,
-    marginLeft: 8,
+  quizActions: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    gap: 8,
+  },
+  actionButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   errorBanner: {
-    backgroundColor: '#fef2f2',
     paddingHorizontal: 16,
     paddingVertical: 12,
     flexDirection: 'row',
     alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: '#fee2e2',
   },
   errorContent: {
     flex: 1,
@@ -689,19 +729,16 @@ const styles = StyleSheet.create({
   },
   errorMessage: {
     fontSize: 14,
-    color: '#ef4444',
     marginLeft: 8,
     flex: 1,
   },
   retryButton: {
-    backgroundColor: '#ef4444',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
     marginLeft: 8,
   },
   retryButtonText: {
-    color: 'white',
     fontSize: 12,
     fontWeight: '600',
   },
@@ -717,12 +754,16 @@ const styles = StyleSheet.create({
     transform: [{ translateY: 100 }],
   },
   fab: {
-    backgroundColor: '#f093fb',
     borderRadius: 50,
     width: 56,
     height: 56,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
   },
 });
 

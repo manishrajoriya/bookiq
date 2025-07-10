@@ -16,17 +16,37 @@ import {
   StatusBar,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   Vibration,
   View
 } from 'react-native';
 import FlashCardGenerationModal from '../components/FlashCardGenerationModal';
 import FlashCardViewer from '../components/FlashCardViewer';
+import ManualFlashCardModal from '../components/ManualFlashCardModal';
+import { useThemeContext } from '../providers/ThemeProvider';
 import { processImage } from '../services/geminiServices';
-import { addFlashCardSet, FlashCardSet, getAllFlashCardSets, resetFlashCardSetTable, spendCredits } from '../services/historyStorage';
+import { FlashCardSet, getAllFlashCardSets, spendCredits } from '../services/historyStorage';
 
 const { width, height } = Dimensions.get('window');
+
+// Dynamic color scheme based on theme
+const getColors = (isDark: boolean) => ({
+  primary: '#43e97a',
+  secondary: '#43e97b',
+  accentColor: '#43e97b',
+  dangerColor: '#ff6b6b',
+  backgroundColor: isDark ? '#0f0f0f' : '#f9fafb',
+  cardColor: isDark ? '#1a1a1a' : '#ffffff',
+  headerBackground: isDark ? '#1a1a1a' : '#ffffff',
+  borderColor: isDark ? '#333333' : '#f3f4f6',
+  iconColor: isDark ? '#9BA1A6' : '#888',
+  textColor: {
+    primary: isDark ? '#ffffff' : '#111827',
+    secondary: isDark ? '#cccccc' : '#6b7280',
+    light: isDark ? '#999999' : '#9ca3af',
+    white: '#ffffff',
+  },
+});
 
 // Enhanced interfaces
 interface FlashCardState {
@@ -40,10 +60,13 @@ interface ErrorState {
   retryable: boolean;
 }
 
-type CardType = 'term-definition' | 'question-answer';
-
 const FlashCardMaker = () => {
   const router = useRouter();
+  
+  // Theme context
+  const { resolvedTheme } = useThemeContext();
+  const COLORS = getColors(resolvedTheme === 'dark');
+  
   // State management
   const [flashCardSets, setFlashCardSets] = useState<FlashCardSet[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,10 +87,6 @@ const FlashCardMaker = () => {
   
   // Manual creation state
   const [manualModalVisible, setManualModalVisible] = useState(false);
-  const [manualTitle, setManualTitle] = useState('');
-  const [manualContent, setManualContent] = useState('');
-  const [manualCardType, setManualCardType] = useState<CardType>('term-definition');
-  const [isSavingManual, setIsSavingManual] = useState(false);
   
   // Error handling
   const [error, setError] = useState<ErrorState>({
@@ -250,79 +269,18 @@ const FlashCardMaker = () => {
   };
 
   const openManualModal = () => {
-    setManualTitle('');
-    setManualContent('');
-    setManualCardType('term-definition');
     setManualModalVisible(true);
   };
 
   const closeManualModal = () => {
-    if (isSavingManual) {
-      Alert.alert(
-        'Saving in Progress',
-        'Please wait for the set to be saved.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
     setManualModalVisible(false);
   };
 
-  const saveManualSet = async () => {
-    if (!manualTitle.trim() || !manualContent.trim()) {
-      Alert.alert('Error', 'Please fill in both title and content for the set.');
-      return;
-    }
-
-    try {
-      setIsSavingManual(true);
-      
-      await addFlashCardSet(
-        manualTitle.trim(),
-        manualContent.trim(),
-        manualCardType
-      );
-
-      await loadFlashCardSets();
-      
-      Alert.alert(
-        'Success!', 
-        'Flash card set has been saved successfully.',
-        [{ text: 'OK' }]
-      );
-      
-      closeManualModal();
-    } catch (error) {
-      console.error('Failed to save manual set:', error);
-      Alert.alert('Error', 'Failed to save set. Please try again.');
-    } finally {
-      setIsSavingManual(false);
-    }
+  const handleManualFlashCardSaved = () => {
+    loadFlashCardSets();
   };
 
-  const handleResetTable = async () => {
-    Alert.alert(
-      'Reset Flash Card Sets',
-      'This will delete all flash card sets and recreate the table. This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reset',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await resetFlashCardSetTable();
-              await loadFlashCardSets();
-              Alert.alert('Success', 'Flash card sets table has been reset successfully.');
-            } catch (error) {
-              console.error('Failed to reset table:', error);
-              Alert.alert('Error', 'Failed to reset table. Please try again.');
-            }
-          }
-        }
-      ]
-    );
-  };
+
 
   const openPreview = (set: FlashCardSet) => {
     setSelectedSet(set);
@@ -364,7 +322,7 @@ const FlashCardMaker = () => {
   };
 
   const renderSetItem = ({ item }: { item: FlashCardSet }) => (
-    <View style={styles.noteCardContainer}>
+    <View style={[styles.noteCardContainer, { backgroundColor: COLORS.cardColor, borderColor: COLORS.borderColor }]}>
       <TouchableOpacity 
         onPress={() => openPreview(item)}
         activeOpacity={0.8}
@@ -372,24 +330,24 @@ const FlashCardMaker = () => {
       >
         <View style={styles.noteCardContent}>
           <View style={styles.noteHeader}>
-            <Text style={styles.noteTitle} numberOfLines={1} ellipsizeMode="tail">
+            <Text style={[styles.noteTitle, { color: COLORS.textColor.primary }]} numberOfLines={1} ellipsizeMode="tail">
               {item.title}
             </Text>
             <View style={styles.noteMetadata}>
-              <Text style={styles.wordCount}>{item.card_type.replace('-', ' ')}</Text>
+              <Text style={[styles.wordCount, { color: COLORS.accentColor, backgroundColor: COLORS.backgroundColor }]}>{item.card_type.replace('-', ' ')}</Text>
             </View>
           </View>
           
           <Text 
             numberOfLines={3} 
-            style={styles.noteContent}
+            style={[styles.noteContent, { color: COLORS.textColor.secondary }]}
             ellipsizeMode="tail"
           >
             {item.content}
           </Text>
           
           <View style={styles.noteFooter}>
-            <Text style={styles.noteDate}>
+            <Text style={[styles.noteDate, { color: COLORS.textColor.light }]}>
               {item.createdAt}
             </Text>
             <View style={styles.noteActions}>
@@ -400,7 +358,7 @@ const FlashCardMaker = () => {
                   openFlashCardViewer(item);
                 }}
               >
-                <Ionicons name="play-outline" size={16} color="#10b981" />
+                <Ionicons name="play-outline" size={16} color={COLORS.accentColor} />
               </TouchableOpacity>
               <TouchableOpacity 
                 style={styles.quizButton}
@@ -409,7 +367,7 @@ const FlashCardMaker = () => {
                   openGenerationModal(item);
                 }}
               >
-                <Ionicons name="copy-outline" size={16} color="#f093fb" />
+                <Ionicons name="copy-outline" size={16} color={COLORS.accentColor} />
               </TouchableOpacity>
             </View>
           </View>
@@ -423,34 +381,34 @@ const FlashCardMaker = () => {
       <Animated.View
         style={[
           styles.emptyIconContainer,
-          { transform: [{ scale: scaleAnim }] }
+          { backgroundColor: COLORS.backgroundColor, transform: [{ scale: scaleAnim }] }
         ]}
       >
-        <Ionicons name="copy-outline" size={80} color="#f0f0ff" />
+        <Ionicons name="copy-outline" size={80} color={COLORS.accentColor} />
       </Animated.View>
-      <Text style={styles.emptyTitle}>No Flash Card Sets</Text>
-      <Text style={styles.emptySubtitle}>
+      <Text style={[styles.emptyTitle, { color: COLORS.textColor.primary }]}>No Flash Card Sets</Text>
+      <Text style={[styles.emptySubtitle, { color: COLORS.textColor.secondary }]}>
         Generate sets from your notes, scan documents, or create them manually
       </Text>
       <View style={styles.emptyButtons}>
         <TouchableOpacity 
-          style={styles.manualQuizEmptyButton}
+          style={[styles.manualQuizEmptyButton, { backgroundColor: COLORS.accentColor }]}
           onPress={openManualModal}
           activeOpacity={0.8}
         >
-          <Ionicons name="add-outline" size={20} color="#fff" />
-          <Text style={styles.manualQuizEmptyButtonText}>Create Set</Text>
+          <Ionicons name="add-outline" size={20} color={COLORS.textColor.white} />
+          <Text style={[styles.manualQuizEmptyButtonText, { color: COLORS.textColor.white }]}>Create Set</Text>
         </TouchableOpacity>
         <TouchableOpacity 
-          style={styles.scanEmptyButton}
+          style={[styles.scanEmptyButton, { backgroundColor: COLORS.accentColor }]}
           onPress={openScanModal}
           activeOpacity={0.8}
         >
-          <Ionicons name="scan-outline" size={20} color="#fff" />
-          <Text style={styles.scanEmptyButtonText}>Scan Document</Text>
+          <Ionicons name="scan-outline" size={20} color={COLORS.textColor.white} />
+          <Text style={[styles.scanEmptyButtonText, { color: COLORS.textColor.white }]}>Scan Document</Text>
         </TouchableOpacity>
       </View>
-      <Text style={styles.emptyNote}>
+      <Text style={[styles.emptyNote, { color: COLORS.textColor.secondary }]}>
         💡 If you're experiencing database issues, try the red reset button in the header
       </Text>
     </View>
@@ -460,39 +418,40 @@ const FlashCardMaker = () => {
     if (!error.type) return null;
     
     return (
-      <View style={styles.errorBanner}>
+      <View style={[styles.errorBanner, { backgroundColor: COLORS.backgroundColor, borderBottomColor: COLORS.borderColor }]}>
         <View style={styles.errorContent}>
           <Ionicons 
             name="alert-circle-outline" 
             size={20} 
-            color="#ef4444" 
+            color={COLORS.dangerColor} 
           />
-          <Text style={styles.errorMessage}>{error.message}</Text>
+          <Text style={[styles.errorMessage, { color: COLORS.dangerColor }]}>{error.message}</Text>
         </View>
         {error.retryable && (
           <TouchableOpacity 
-            style={styles.retryButton}
+            style={[styles.retryButton, { backgroundColor: COLORS.dangerColor }]}
             onPress={retryLastAction}
           >
-            <Text style={styles.retryButtonText}>Retry</Text>
+            <Text style={[styles.retryButtonText, { color: COLORS.textColor.white }]}>Retry</Text>
           </TouchableOpacity>
         )}
         <TouchableOpacity 
           style={styles.dismissButton}
           onPress={clearError}
         >
-          <Ionicons name="close" size={16} color="#ef4444" />
+          <Ionicons name="close" size={16} color={COLORS.dangerColor} />
         </TouchableOpacity>
       </View>
     );
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+    <SafeAreaView style={[styles.container, { backgroundColor: COLORS.backgroundColor }]}>
+      <StatusBar barStyle={resolvedTheme === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={COLORS.headerBackground} />
       
       <Animated.View style={[
         styles.header,
+        { backgroundColor: COLORS.headerBackground, borderBottomColor: COLORS.borderColor },
         {
           shadowOpacity: scrollY.interpolate({
             inputRange: [0, 10],
@@ -508,8 +467,8 @@ const FlashCardMaker = () => {
       ]}>
         <View style={styles.headerContent}>
           <View style={styles.headerText}>
-            <Text style={styles.headerTitle}>Flash Card Maker</Text>
-            <Text style={styles.headerSubtitle}>
+            <Text style={[styles.headerTitle, { color: COLORS.textColor.primary }]}>Flash Card Maker</Text>
+            <Text style={[styles.headerSubtitle, { color: COLORS.textColor.secondary }]}>
               {flashCardSets.length} saved {flashCardSets.length === 1 ? 'set' : 'sets'}
             </Text>
           </View>
@@ -518,20 +477,15 @@ const FlashCardMaker = () => {
               style={styles.manualQuizButton}
               onPress={openManualModal}
             >
-              <Ionicons name="add-outline" size={24} color="#10b981" />
+              <Ionicons name="add-outline" size={24} color={COLORS.accentColor} />
             </TouchableOpacity>
             <TouchableOpacity 
               style={styles.scanButton}
               onPress={openScanModal}
             >
-              <Ionicons name="scan-outline" size={24} color="#f093fb" />
+              <Ionicons name="scan-outline" size={24} color={COLORS.accentColor} />
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.resetButton}
-              onPress={handleResetTable}
-            >
-              <Ionicons name="refresh-outline" size={24} color="#ef4444" />
-            </TouchableOpacity>
+            
           </View>
         </View>
       </Animated.View>
@@ -540,8 +494,8 @@ const FlashCardMaker = () => {
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#f093fb" />
-          <Text style={styles.loadingText}>Loading your sets...</Text>
+          <ActivityIndicator size="large" color={COLORS.accentColor} />
+          <Text style={[styles.loadingText, { color: COLORS.accentColor }]}>Loading your sets...</Text>
         </View>
       ) : flashCardSets.length === 0 ? (
         renderEmptyState()
@@ -588,16 +542,16 @@ const FlashCardMaker = () => {
         transparent={false}
         onRequestClose={closeScanModal}
       >
-        <SafeAreaView style={styles.modalSafeAreView}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
+        <SafeAreaView style={[styles.modalSafeAreView, { backgroundColor: COLORS.backgroundColor }]}>
+          <View style={[styles.modalContainer, { backgroundColor: COLORS.backgroundColor }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: COLORS.borderColor }]}>
               <View style={styles.modalTitleContainer}>
-                <Text style={styles.modalTitle}>Scan for Set</Text>
+                <Text style={[styles.modalTitle, { color: COLORS.textColor.primary }]}>Scan for Set</Text>
                 <TouchableOpacity 
                   onPress={closeScanModal}
                   style={styles.closeButton}
                 >
-                  <Ionicons name="close" size={24} color="#6b7280" />
+                  <Ionicons name="close" size={24} color={COLORS.textColor.secondary} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -608,37 +562,39 @@ const FlashCardMaker = () => {
             >
               {!imageUri && (
                 <View style={styles.scanSection}>
-                  <Text style={styles.sectionTitle}>Scan Document</Text>
-                  <Text style={styles.sectionSubtitle}>
+                  <Text style={[styles.sectionTitle, { color: COLORS.textColor.primary }]}>Scan Document</Text>
+                  <Text style={[styles.sectionSubtitle, { color: COLORS.textColor.secondary }]}>
                     Take a photo or choose from gallery to extract text for set generation
                   </Text>
                   <View style={styles.scanButtons}>
                     <TouchableOpacity 
                       style={[
                         styles.scanButton,
+                        { backgroundColor: COLORS.cardColor, borderColor: COLORS.borderColor },
                         isScanning && styles.scanButtonDisabled
                       ]}
                       onPress={handleCameraScan}
                       disabled={isScanning}
                     >
-                      <View style={styles.scanButtonIcon}>
-                        <Ionicons name="camera-outline" size={28} color="#f093fb" />
+                      <View style={[styles.scanButtonIcon, { backgroundColor: COLORS.backgroundColor }]}>
+                        <Ionicons name="camera-outline" size={28} color={COLORS.accentColor} />
                       </View>
-                      <Text style={styles.scanButtonText}>Camera</Text>
+                      <Text style={[styles.scanButtonText, { color: COLORS.textColor.primary }]}>Camera</Text>
                     </TouchableOpacity>
                     
                     <TouchableOpacity 
                       style={[
                         styles.scanButton,
+                        { backgroundColor: COLORS.cardColor, borderColor: COLORS.borderColor },
                         isScanning && styles.scanButtonDisabled
                       ]}
                       onPress={handleGalleryScan}
                       disabled={isScanning}
                     >
-                      <View style={styles.scanButtonIcon}>
-                        <Ionicons name="image-outline" size={28} color="#f093fb" />
+                      <View style={[styles.scanButtonIcon, { backgroundColor: COLORS.backgroundColor }]}>
+                        <Ionicons name="image-outline" size={28} color={COLORS.accentColor} />
                       </View>
-                      <Text style={styles.scanButtonText}>Gallery</Text>
+                      <Text style={[styles.scanButtonText, { color: COLORS.textColor.primary }]}>Gallery</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -646,8 +602,8 @@ const FlashCardMaker = () => {
 
               {imageUri && (
                 <View style={styles.imageSection}>
-                  <Text style={styles.sectionTitle}>Document Preview</Text>
-                  <View style={styles.imageContainer}>
+                  <Text style={[styles.sectionTitle, { color: COLORS.textColor.primary }]}>Document Preview</Text>
+                  <View style={[styles.imageContainer, { backgroundColor: COLORS.backgroundColor }]}>
                     <Image
                       source={{ uri: imageUri }}
                       style={styles.previewImage}
@@ -661,7 +617,7 @@ const FlashCardMaker = () => {
                         clearError();
                       }}
                     >
-                      <Ionicons name="close" size={16} color="#fff" />
+                      <Ionicons name="close" size={16} color={COLORS.textColor.white} />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -669,18 +625,18 @@ const FlashCardMaker = () => {
 
               {extractedText && (
                 <View style={styles.extractedTextSection}>
-                  <Text style={styles.sectionTitle}>Extracted Text</Text>
-                  <View style={styles.extractedTextContainer}>
-                    <Text style={styles.extractedTextContent}>{extractedText}</Text>
+                  <Text style={[styles.sectionTitle, { color: COLORS.textColor.primary }]}>Extracted Text</Text>
+                  <View style={[styles.extractedTextContainer, { backgroundColor: COLORS.cardColor, borderColor: COLORS.borderColor }]}>
+                    <Text style={[styles.extractedTextContent, { color: COLORS.textColor.secondary }]}>{extractedText}</Text>
                   </View>
                 </View>
               )}
             </ScrollView>
 
             {extractedText && (
-              <View style={styles.generateButtonSection}>
+              <View style={[styles.generateButtonSection, { borderTopColor: COLORS.borderColor, backgroundColor: COLORS.backgroundColor }]}>
                 <TouchableOpacity
-                  style={styles.generateButton}
+                  style={[styles.generateButton, { backgroundColor: COLORS.accentColor }]}
                   onPress={() => {
                     closeScanModal();
                     // Open flash card generation modal with scanned content
@@ -694,8 +650,8 @@ const FlashCardMaker = () => {
                     setGenerationModalVisible(true);
                   }}
                 >
-                  <Ionicons name="sparkles-outline" size={20} color="white" />
-                  <Text style={styles.generateButtonText}>Generate Flash Cards</Text>
+                  <Ionicons name="sparkles-outline" size={20} color={COLORS.textColor.white} />
+                  <Text style={[styles.generateButtonText, { color: COLORS.textColor.white }]}>Generate Flash Cards</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -703,103 +659,12 @@ const FlashCardMaker = () => {
         </SafeAreaView>
       </Modal>
 
-      <Modal
+      {/* Manual Flash Card Modal */}
+      <ManualFlashCardModal
         visible={manualModalVisible}
-        animationType="slide"
-        transparent={false}
-        onRequestClose={closeManualModal}
-      >
-        <SafeAreaView style={styles.modalSafeAreView}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <View style={styles.modalTitleContainer}>
-                <Text style={styles.modalTitle}>Create Manual Set</Text>
-                <TouchableOpacity 
-                  onPress={closeManualModal}
-                  style={styles.closeButton}
-                >
-                  <Ionicons name="close" size={24} color="#6b7280" />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <ScrollView 
-              style={styles.modalContent}
-              showsVerticalScrollIndicator={false}
-            >
-              <View style={styles.formSection}>
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Set Title</Text>
-                  <TextInput
-                    style={styles.titleInput}
-                    value={manualTitle}
-                    onChangeText={setManualTitle}
-                    placeholder="Enter set title..."
-                    placeholderTextColor="#9ca3af"
-                    returnKeyType="next"
-                  />
-                </View>
-
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Set Content</Text>
-                  <View style={styles.contentInputContainer}>
-                    <TextInput
-                      style={styles.contentInput}
-                      value={manualContent}
-                      onChangeText={setManualContent}
-                      placeholder="Enter your content here..."
-                      placeholderTextColor="#9ca3af"
-                      multiline
-                      textAlignVertical="top"
-                    />
-                  </View>
-                </View>
-
-                <View style={styles.settingGroup}>
-                  <Text style={styles.settingLabel}>Card Type</Text>
-                  <View style={styles.quizTypeButtons}>
-                    {(['term-definition', 'question-answer'] as CardType[]).map((type) => (
-                      <TouchableOpacity
-                        key={type}
-                        style={[
-                          styles.quizTypeButton,
-                          manualCardType === type && styles.quizTypeButtonActive
-                        ]}
-                        onPress={() => setManualCardType(type)}
-                      >
-                        <Text style={[
-                          styles.quizTypeButtonText,
-                          manualCardType === type && styles.quizTypeButtonTextActive
-                        ]}>
-                          {type.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-
-                <TouchableOpacity
-                  style={[
-                    styles.saveButton,
-                    isSavingManual && styles.saveButtonDisabled
-                  ]}
-                  onPress={saveManualSet}
-                  disabled={isSavingManual}
-                >
-                  {isSavingManual ? (
-                    <ActivityIndicator color="white" size="small" />
-                  ) : (
-                    <>
-                      <Ionicons name="save-outline" size={20} color="white" />
-                      <Text style={styles.saveButtonText}>Save Set</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
-          </View>
-        </SafeAreaView>
-      </Modal>
+        onClose={closeManualModal}
+        onFlashCardSaved={handleManualFlashCardSaved}
+      />
     </SafeAreaView>
   );
 };

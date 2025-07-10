@@ -23,6 +23,8 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+import AuthScreen from '../../components/AuthScreen';
+import { useAuth } from '../../providers/AuthProvider';
 
 // Dynamic color scheme based on theme
 const getColors = (isDark: boolean) => ({
@@ -30,15 +32,15 @@ const getColors = (isDark: boolean) => ({
     secondary: '#4338ca',
     accentColor: '#feca57',
     dangerColor: '#ff6b6b',
-    backgroundColor: isDark ? '#151718' : '#f8f9fa',
-    cardColor: isDark ? '#1e1e1e' : '#ffffff',
+    backgroundColor: isDark ? '#0f0f0f' : '#f8f9fa',
+    cardColor: isDark ? '#1a1a1a' : '#ffffff',
     headerBackground: isDark ? '#1a1a1a' : '#f7f8fa',
     borderColor: isDark ? '#333333' : '#f0f0f0',
     iconColor: isDark ? '#9BA1A6' : '#888',
     textColor: {
-        primary: isDark ? '#ECEDEE' : '#1a1a1a',
-        secondary: isDark ? '#9BA1A6' : '#666',
-        light: isDark ? '#687076' : '#aaa',
+        primary: isDark ? '#ffffff' : '#1a1a1a',
+        secondary: isDark ? '#cccccc' : '#666',
+        light: isDark ? '#999999' : '#aaa',
         white: '#ffffff',
     },
 });
@@ -366,6 +368,7 @@ const EmptyState: React.FC<{ colors: ReturnType<typeof getColors> }> = ({ colors
 
 // Main Component
 const Profile: React.FC = () => {
+    const { user, loading: authLoading, signIn, signUp, signOut } = useAuth();
     const [history, setHistory] = useState<HistoryItem[]>([]);
     const [activeFilter, setActiveFilter] = useState("All");
     const [expandedItem, setExpandedItem] = useState<number | null>(null);
@@ -383,6 +386,8 @@ const Profile: React.FC = () => {
     // Theme context
     const { resolvedTheme, toggleTheme } = useThemeContext();
     const COLORS = getColors(resolvedTheme === 'dark');
+
+    const [showAuth, setShowAuth] = useState(false);
 
     const loadData = useCallback(async () => {
         try {
@@ -494,6 +499,21 @@ const Profile: React.FC = () => {
                 onToggleTheme={toggleTheme}
                 isDark={resolvedTheme === 'dark'}
             />
+            {user ? (
+                <TouchableOpacity
+                    style={{ alignSelf: 'flex-end', marginRight: 24, marginBottom: 8, backgroundColor: '#ff6b6b', padding: 10, borderRadius: 8 }}
+                    onPress={signOut}
+                >
+                    <Text style={{ color: 'white', fontWeight: '700' }}>Sign Out</Text>
+                </TouchableOpacity>
+            ) : (
+                <TouchableOpacity
+                    style={{ alignSelf: 'flex-end', marginRight: 24, marginBottom: 8, backgroundColor: '#667eea', padding: 10, borderRadius: 8 }}
+                    onPress={() => setShowAuth(true)}
+                >
+                    <Text style={{ color: 'white', fontWeight: '700' }}>Login / Sign Up</Text>
+                </TouchableOpacity>
+            )}
             <StatsCard stats={stats} loading={loading} colors={COLORS} />
             <FilterSection
                 activeFilter={activeFilter}
@@ -505,8 +525,13 @@ const Profile: React.FC = () => {
     );
 
     return (
-        <View style={[styles.container, { backgroundColor: COLORS.backgroundColor }]}>
+        <View style={[styles.container, { backgroundColor: COLORS.backgroundColor }]}> 
             <View style={{ height: 24 }} />
+            {showAuth && (
+                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10, backgroundColor: 'rgba(0,0,0,0.2)', justifyContent: 'center', alignItems: 'center' }}>
+                    <AuthScreen onAuthSuccess={() => setShowAuth(false)} onClose={() => setShowAuth(false)} />
+                </View>
+            )}
             <FlatList
                 data={filteredHistory}
                 keyExtractor={(item) => item.id.toString()}
