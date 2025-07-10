@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from '../providers/AuthProvider';
-import { signInWithGoogle } from '../services/authService';
 
 interface AuthScreenProps {
   mode?: 'login' | 'signup';
@@ -16,7 +15,6 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ mode = 'login', onAuthSuccess, 
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
 
   const handleAuth = async () => {
     setLoading(true);
@@ -32,19 +30,6 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ mode = 'login', onAuthSuccess, 
       setError(e.message || 'Authentication failed');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleGoogleAuth = async () => {
-    setGoogleLoading(true);
-    setError(null);
-    try {
-      await signInWithGoogle();
-      if (onAuthSuccess) onAuthSuccess();
-    } catch (e: any) {
-      setError(e.message || 'Google sign-in failed');
-    } finally {
-      setGoogleLoading(false);
     }
   };
 
@@ -74,15 +59,6 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ mode = 'login', onAuthSuccess, 
       >
         {loading ? <ActivityIndicator color="#fff" /> : (
           <Text style={styles.buttonText}>{authMode === 'login' ? 'Login' : 'Sign Up'}</Text>
-        )}
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={[styles.button, { backgroundColor: '#4285F4', marginTop: 8 }]}
-        onPress={handleGoogleAuth}
-        disabled={googleLoading}
-      >
-        {googleLoading ? <ActivityIndicator color="#fff" /> : (
-          <Text style={styles.buttonText}>Continue with Google</Text>
         )}
       </TouchableOpacity>
       <TouchableOpacity onPress={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}>
