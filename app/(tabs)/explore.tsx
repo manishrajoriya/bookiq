@@ -80,6 +80,7 @@ const Explore = () => {
     const displayedSubjects = showAllSubjects ? allSubjects : allSubjects.slice(0, 4);
 
     const featureRouteMap: Record<string, string> = {
+      'ai-scan': '/ai-scan',
       'study-notes': '/study-notes',
       'notes': '/notes',
       'quiz-maker': '/quiz-maker',

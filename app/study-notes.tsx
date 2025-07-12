@@ -4,26 +4,27 @@ import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useRef, useState } from 'react';
 import {
-  ActionSheetIOS,
-  ActivityIndicator,
-  Alert,
-  Animated,
-  Dimensions,
-  Image,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  Vibration,
-  View
+    ActionSheetIOS,
+    ActivityIndicator,
+    Alert,
+    Animated,
+    Dimensions,
+    Image,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    SafeAreaView,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    Vibration,
+    View
 } from 'react-native';
 import AppendScanModal from '../components/AppendScanModal';
+import EnhanceNotesModal from '../components/EnhanceNotesModal';
 import FlashCardGenerationModal from '../components/FlashCardGenerationModal';
 import NoteReaderModal from '../components/NoteReaderModal';
 import QuizGenerationModal from '../components/QuizGenerationModal';
@@ -117,6 +118,10 @@ const StudyNotes = () => {
 
   // Flash card viewer modal state
   const [viewerModalVisible, setViewerModalVisible] = useState(false);
+
+  // Enhance notes modal state
+  const [enhanceModalVisible, setEnhanceModalVisible] = useState(false);
+  const [enhanceTargetNote, setEnhanceTargetNote] = useState<ScanNote | null>(null);
 
   // Theme colors
   const backgroundColor = useThemeColor({}, 'background');
@@ -534,6 +539,23 @@ const StudyNotes = () => {
     setSelectedNote(null);
   };
 
+  // Enhance notes handlers
+  const openEnhanceModal = (note: ScanNote) => {
+    setEnhanceTargetNote(note);
+    setEnhanceModalVisible(true);
+  };
+  const closeEnhanceModal = () => {
+    setEnhanceModalVisible(false);
+    setEnhanceTargetNote(null);
+  };
+  const handleNoteEnhanced = async (enhancedContent: string) => {
+    if (enhanceTargetNote) {
+      await updateScanNote(enhanceTargetNote.id, enhanceTargetNote.title, enhancedContent);
+      await loadNotes();
+    }
+    closeEnhanceModal();
+  };
+
   // Parse flash cards from note content
   const parseFlashCards = (content: string): { front: string; back: string }[] => {
     return content
@@ -562,7 +584,7 @@ const StudyNotes = () => {
               {item.title}
             </Text>
             <View style={styles.noteMetadata}>
-              <Text style={[styles.wordCount, { color: iconColor }]}>{item.wordCount} words</Text>
+              <Text style={[styles.wordCount, { color: iconColor, backgroundColor: cardColor }]}>{item.wordCount} words</Text>
             </View>
           </View>
           
@@ -630,6 +652,16 @@ const StudyNotes = () => {
                 }}
               >
                 <Ionicons name="albums-outline" size={16} color={iconColor} />
+              </TouchableOpacity>
+              {/* Enhance Notes Button */}
+              <TouchableOpacity 
+                style={styles.practiceButton}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  openEnhanceModal(item);
+                }}
+              >
+                <Ionicons name="sparkles-outline" size={16} color="#fbbf24" />
               </TouchableOpacity>
               <TouchableOpacity 
                 style={styles.practiceButton}
@@ -1091,6 +1123,16 @@ const StudyNotes = () => {
         sourceId={selectedNote?.id}
         sourceType="scan-note"
         onFlashCardSaved={handleFlashCardSaved}
+      />
+
+      {/* Enhance Notes Modal */}
+      <EnhanceNotesModal
+        visible={enhanceModalVisible}
+        onClose={closeEnhanceModal}
+        sourceContent={enhanceTargetNote?.content || ''}
+        sourceTitle={enhanceTargetNote?.title || ''}
+        sourceId={enhanceTargetNote?.id}
+        onNoteEnhanced={handleNoteEnhanced}
       />
     </SafeAreaView>
   );

@@ -1,849 +1,854 @@
-import { usePurchases } from '@/providers/PurchasesProvider';
-import { useThemeContext } from '@/providers/ThemeProvider';
-import {
-    addCredits,
-    getAllHistory,
-    getAllNotes,
-    getCredits
-} from "@/services/historyStorage";
-import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect } from "@react-navigation/native";
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     Alert,
-    FlatList,
-    Image,
-    ListRenderItemInfo,
+    KeyboardAvoidingView,
+    Modal,
     Platform,
-    RefreshControl,
     ScrollView,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
     View
 } from 'react-native';
-import AuthScreen from '../../components/AuthScreen';
-import { useAuth } from '../../providers/AuthProvider';
+import { useThemeColor } from '../../hooks/useThemeColor';
+import { useThemeContext } from '../../providers/ThemeProvider';
+import {
+    getAllFlashCardSets,
+    getAllHistory,
+    getAllNotes,
+    getAllQuizzes,
+    getAllScanNotes,
+    getCredits
+} from '../../services/historyStorage';
 
-// Dynamic color scheme based on theme
-const getColors = (isDark: boolean) => ({
-    primary: '#667eea',
-    secondary: '#4338ca',
-    accentColor: '#feca57',
-    dangerColor: '#ff6b6b',
-    backgroundColor: isDark ? '#0f0f0f' : '#f8f9fa',
-    cardColor: isDark ? '#1a1a1a' : '#ffffff',
-    headerBackground: isDark ? '#1a1a1a' : '#f7f8fa',
-    borderColor: isDark ? '#333333' : '#f0f0f0',
-    iconColor: isDark ? '#9BA1A6' : '#888',
-    textColor: {
-        primary: isDark ? '#ffffff' : '#1a1a1a',
-        secondary: isDark ? '#cccccc' : '#666',
-        light: isDark ? '#999999' : '#aaa',
-        white: '#ffffff',
-    },
-});
-
-// Constants
-const FILTER_OPTIONS = [
-    "All",
-    "ai-scan",
-    "notes",
-    "notes-updated",
-    "calculator",
-    "quiz-maker",
-    "study-notes",
-];
-
-const FEATURE_COLORS: Record<string, string> = {
-    'ai-scan': '#667eea',
-    'calculator': '#764ba2',
-    'quiz-maker': '#f093fb',
-    'study-notes': '#4facfe',
-    'flash-cards': '#43e97b',
-    'homework': '#fa709a',
-    'magic-eraser': '#ff6b6b',
-    'voice-notes': '#4ecdc4',
-    'pdf-scanner': '#45b7d1',
-    'mind-maps': '#96ceb4',
-    'notes': '#feca57',
-    'notes-updated': '#fca5a5',
-    'timer': '#feca57',
-    'translator': '#ff9ff3',
-    'default': '#888'
-};
-
-// Types
-interface HistoryItem {
-    id: number;
-    imageUri: string | null;
-    feature: string;
-    extractedText: string;
-    aiAnswer: string;
-    createdAt: string;
+interface UserStats {
+  problemsSolved: number;
+  daysActive: number;
+  notesCreated: number;
+  totalScans: number;
+  quizzesCreated: number;
+  flashCardsCreated: number;
 }
 
-interface Stats {
-    problemsSolved: number;
-    daysActive: number;
-    notesCreated: number;
+interface Achievement {
+  id: number;
+  title: string;
+  description: string;
+  earned: boolean;
+  icon: string;
 }
 
-interface ProfileHeaderProps {
-    loading: boolean;
-    credits: number;
-    onRefresh: () => void;
-    onClearHistory: () => void;
-    onGetFreeCredits: () => void;
-    onGoPro: () => void;
-    onToggleTheme: () => void;
-    isDark: boolean;
-}
-
-interface StatsCardProps {
-    stats: Stats;
-    loading: boolean;
-    colors: ReturnType<typeof getColors>;
-}
-
-interface FilterSectionProps {
-    activeFilter: string;
-    onFilterChange: (filter: string) => void;
-    colors: ReturnType<typeof getColors>;
-}
-
-// Helper Functions
-const formatDate = (dateString: string): string => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffInHours = Math.abs(now.getTime() - date.getTime()) / (1000 * 60 * 60);
+const Profile = () => {
+  const router = useRouter();
+  const { resolvedTheme, toggleTheme } = useThemeContext();
+  
+  // Theme colors
+  const backgroundColor = useThemeColor({}, 'background');
+  const textColor = useThemeColor({}, 'text');
+  const iconColor = useThemeColor({}, 'icon');
+  const tintColor = useThemeColor({}, 'tint');
+  
+  // Theme-aware color palette
+  const colors = {
+    primary: resolvedTheme === 'dark' ? '#0a7ea4' : tintColor, // Use light tint color for dark mode
+    success: resolvedTheme === 'dark' ? '#10b981' : '#059669',
+    warning: resolvedTheme === 'dark' ? '#f59e0b' : '#d97706',
+    danger: resolvedTheme === 'dark' ? '#ef4444' : '#dc2626',
+    accent: resolvedTheme === 'dark' ? '#06b6d4' : '#0891b2',
+    secondary: resolvedTheme === 'dark' ? '#8b5cf6' : '#7c3aed',
     
-    if (diffInHours < 24) {
-        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } else if (diffInHours < 168) { // 7 days
-        return date.toLocaleDateString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+    surface: resolvedTheme === 'dark' ? '#1e293b' : '#f8fafc',
+    card: resolvedTheme === 'dark' ? '#1e293b' : '#ffffff',
+    cardSecondary: resolvedTheme === 'dark' ? '#334155' : '#f8fafc',
+    
+    border: iconColor,
+    overlay: 'rgba(0, 0, 0, 0.5)',
+    
+    // Better icon colors for dark mode
+    iconPrimary: resolvedTheme === 'dark' ? '#ffffff' : iconColor,
+    iconSecondary: resolvedTheme === 'dark' ? '#94a3b8' : iconColor,
+  };
+  
+  // State
+  const [credits, setCredits] = useState(0);
+  const [stats, setStats] = useState<UserStats>({
+    problemsSolved: 0,
+    daysActive: 0,
+    notesCreated: 0,
+    totalScans: 0,
+    quizzesCreated: 0,
+    flashCardsCreated: 0
+  });
+  const [loading, setLoading] = useState(false);
+  const [showProfileEdit, setShowProfileEdit] = useState(false);
+  const [newEmail, setNewEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+
+  // Quick actions data
+  const quickActions = [
+    { id: 'study', icon: 'book-outline', title: 'Study Plans', route: '/study-notes' },
+    { id: 'quiz', icon: 'help-circle-outline', title: 'Quiz Me', route: '/quiz-maker' },
+    { id: 'flashcards', icon: 'card-outline', title: 'Flashcards', route: '/flash-cards' },
+    { id: 'notes', icon: 'document-text-outline', title: 'My Notes', route: '/notes' },
+    { id: 'progress', icon: 'trending-up-outline', title: 'Progress', route: '/explore' },
+    { id: 'achievements', icon: 'trophy-outline', title: 'Achievements', route: '/explore' },
+  ];
+
+  const achievements: Achievement[] = [
+    { id: 1, title: 'First Quiz', description: 'Complete your first quiz', earned: stats.quizzesCreated > 0, icon: 'help-circle' },
+    { id: 2, title: 'Study Streak', description: '7 days of consistent study', earned: stats.daysActive >= 7, icon: 'flame' },
+    { id: 3, title: 'Note Master', description: 'Create 50 notes', earned: stats.notesCreated >= 50, icon: 'document-text' },
+    { id: 4, title: 'Quiz Champion', description: 'Score 90%+ on 10 quizzes', earned: false, icon: 'trophy' },
+    { id: 5, title: 'Scanner Pro', description: 'Scan 100 images', earned: stats.totalScans >= 100, icon: 'scan' },
+    { id: 6, title: 'Flashcard Fanatic', description: 'Create 25 flashcard sets', earned: stats.flashCardsCreated >= 25, icon: 'card' },
+  ];
+
+  useEffect(() => {
+    loadUserData();
+  }, []);
+
+  const loadUserData = async () => {
+    setLoading(true);
+    try {
+      // Load credits
+      const userCredits = await getCredits();
+      setCredits(userCredits);
+
+      // Load all data to calculate stats
+      const [history, notes, scanNotes, quizzes, flashCards] = await Promise.all([
+        getAllHistory(),
+        getAllNotes(),
+        getAllScanNotes(),
+        getAllQuizzes(),
+        getAllFlashCardSets()
+      ]);
+
+      // Calculate days active (simplified - count unique days with activity)
+      const allDates = [
+        ...history.map(h => new Date(h.createdAt).toDateString()),
+        ...notes.map(n => new Date(n.createdAt).toDateString()),
+        ...scanNotes.map(sn => new Date(sn.createdAt).toDateString()),
+        ...quizzes.map(q => new Date(q.createdAt).toDateString()),
+        ...flashCards.map(fc => new Date(fc.createdAt).toDateString())
+      ];
+      const uniqueDays = new Set(allDates).size;
+
+      setStats({
+        problemsSolved: history.filter(h => h.feature === 'ai-scan').length,
+        daysActive: uniqueDays,
+        notesCreated: notes.length + scanNotes.length,
+        totalScans: history.filter(h => h.feature === 'ai-scan').length,
+        quizzesCreated: quizzes.length,
+        flashCardsCreated: flashCards.length
+      });
+    } catch (error) {
+      console.error('Error loading user data:', error);
+    } finally {
+      setLoading(false);
     }
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-};
+  };
 
-const formatFeatureName = (feature: string): string => {
-    return feature.replace(/-/g, " ").replace(/\b\w/g, l => l.toUpperCase());
-};
+  const handleQuickAction = (action: typeof quickActions[0]) => {
+    if (action.route) {
+      router.push(action.route as any);
+    } else {
+      Alert.alert(action.title, `${action.title} feature coming soon!`);
+    }
+  };
 
-// Components
-const ProfileHeader: React.FC<ProfileHeaderProps> = ({
-    loading,
-    credits,
-    onRefresh,
-    onClearHistory,
-    onGetFreeCredits,
-    onGoPro,
-    onToggleTheme,
-    isDark,
-}) => {
-    const colors = getColors(isDark);
-    
-    return (
-        <View style={[styles.profileHeader, { backgroundColor: colors.headerBackground }]}>
-            <View style={styles.headerContent}>
-                <View style={styles.userSection}>
-                    <View style={styles.avatar}>
-                        <Ionicons name="person-circle" size={64} color={colors.accentColor} />
-                    </View>
-                    <View style={styles.userInfo}>
-                        <Text style={[styles.welcomeText, { color: colors.textColor.primary }]}>Welcome Back!</Text>
-                        <Text style={[styles.subtitleText, { color: colors.textColor.secondary }]}>Your AI Study Journey</Text>
-                        
-                        <View style={styles.creditsContainer}>
-                            <View style={styles.creditsInfo}>
-                                <Ionicons name="diamond" size={18} color={colors.accentColor} />
-                                <Text style={[styles.creditsLabel, { color: colors.textColor.secondary }]}>Credits: </Text>
-                                <Text style={[styles.creditsValue, { color: colors.accentColor }]}>
-                                    {loading ? '...' : credits.toLocaleString()}
-                                </Text>
-                            </View>
-                            <TouchableOpacity 
-                                onPress={onRefresh} 
-                                style={[styles.refreshButton, { backgroundColor: 'rgba(102, 126, 234, 0.1)' }]}
-                                disabled={loading}
-                            >
-                                <Ionicons 
-                                    name="refresh" 
-                                    size={16} 
-                                    color={loading ? colors.textColor.light : colors.accentColor} 
-                                />
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-                
-                <View style={styles.headerActions}>
-                    <TouchableOpacity 
-                        style={[styles.themeButton, { backgroundColor: 'rgba(102, 126, 234, 0.1)' }]} 
-                        onPress={onToggleTheme}
-                    >
-                        <Ionicons 
-                            name={isDark ? "sunny-outline" : "moon-outline"} 
-                            size={20} 
-                            color={colors.accentColor} 
-                        />
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity 
-                        style={[styles.clearButton, { backgroundColor: 'rgba(255, 107, 107, 0.1)' }]} 
-                        onPress={onClearHistory}
-                    >
-                        <Ionicons name="trash-outline" size={20} color={colors.dangerColor} />
-                    </TouchableOpacity>
-                </View>
+  const ProfileHeader = () => (
+    <View style={[styles.profileHeader, { backgroundColor }]}>
+      <View style={styles.headerBackground}>
+        <View style={styles.headerContent}>
+          {/* Avatar Section */}
+          <View style={styles.avatarSection}>
+            <View style={[styles.avatarContainer, { backgroundColor: colors.primary }]}>
+              <Text style={[styles.avatarText, { color: '#ffffff' }]}>U</Text>
+              <View style={[styles.statusDot, { backgroundColor: colors.success }]} />
             </View>
+          </View>
+
+          {/* User Info */}
+          <View style={styles.userInfo}>
+            <Text style={[styles.greeting, { color: textColor }]}>
+              Welcome back!
+            </Text>
+            <Text style={[styles.userEmail, { color: colors.iconSecondary }]}>
+              user@bookiq.app
+            </Text>
             
-            <View style={styles.buttonGroup}>
-                <TouchableOpacity
-                    style={[styles.proButton, { backgroundColor: colors.accentColor }]}
-                    onPress={onGoPro}
-                >
-                    <Ionicons name="rocket" size={20} color={colors.textColor.white} />
-                    <Text style={[styles.creditsButtonText, { color: colors.textColor.white }]}>Go PRO</Text>
-                </TouchableOpacity>
-            </View>
-        </View>
-    );
-};
-
-const StatsCard: React.FC<StatsCardProps> = ({ stats, loading, colors }) => (
-    <View style={[styles.statsCard, { backgroundColor: colors.cardColor, borderColor: colors.borderColor }]}>
-        <Text style={[styles.sectionTitle, { color: colors.textColor.primary }]}>Your Progress</Text>
-        <View style={styles.statsGrid}>
-            <View style={styles.statItem}>
-                <Text style={[styles.statNumber, { color: colors.accentColor }]}>
-                    {loading ? '...' : stats.problemsSolved}
+            {/* Credits Display */}
+            <View style={styles.creditsRow}>
+              <View style={[styles.creditsContainer, { backgroundColor: colors.cardSecondary }]}>
+                <Text style={styles.creditsIcon}>💎</Text>
+                <Text style={[styles.creditsText, { color: textColor }]}>
+                  {credits.toLocaleString()} credits
                 </Text>
-                <Text style={[styles.statLabel, { color: colors.textColor.secondary }]}>Problems Solved</Text>
-            </View>
-            <View style={[styles.statDivider, { backgroundColor: colors.borderColor }]} />
-            <View style={styles.statItem}>
-                <Text style={[styles.statNumber, { color: colors.accentColor }]}>
-                    {loading ? '...' : stats.daysActive}
-                </Text>
-                <Text style={[styles.statLabel, { color: colors.textColor.secondary }]}>Days Active</Text>
-            </View>
-            <View style={[styles.statDivider, { backgroundColor: colors.borderColor }]} />
-            <View style={styles.statItem}>
-                <Text style={[styles.statNumber, { color: colors.accentColor }]}>
-                    {loading ? '...' : stats.notesCreated}
-                </Text>
-                <Text style={[styles.statLabel, { color: colors.textColor.secondary }]}>Notes Created</Text>
-            </View>
-        </View>
-    </View>
-);
-
-const FilterSection: React.FC<FilterSectionProps> = ({ activeFilter, onFilterChange, colors }) => (
-    <View style={[styles.filterSection, { backgroundColor: colors.headerBackground }]}>
-        <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterScrollContent}
-        >
-            {FILTER_OPTIONS.map((filter) => (
-                <TouchableOpacity
-                    key={filter}
-                    style={[
-                        styles.filterChip,
-                        { backgroundColor: 'rgba(102, 126, 234, 0.1)', borderColor: 'rgba(102, 126, 234, 0.2)' },
-                        activeFilter === filter && { backgroundColor: colors.accentColor, borderColor: colors.accentColor },
-                    ]}
-                    onPress={() => onFilterChange(filter)}
-                    activeOpacity={0.7}
-                >
-                    <Text
-                        style={[
-                            styles.filterChipText,
-                            { color: colors.textColor.secondary },
-                            activeFilter === filter && { color: colors.textColor.white },
-                        ]}
-                    >
-                        {formatFeatureName(filter)}
-                    </Text>
-                </TouchableOpacity>
-            ))}
-        </ScrollView>
-    </View>
-);
-
-const HistoryCard: React.FC<{
-    item: HistoryItem;
-    isExpanded: boolean;
-    onToggleExpand: () => void;
-    colors: ReturnType<typeof getColors>;
-}> = ({ item, isExpanded, onToggleExpand, colors }) => {
-    const isNote = item.feature === "notes" || item.feature === "notes-updated";
-    
-    return (
-        <TouchableOpacity
-            style={[styles.historyCard, { backgroundColor: colors.cardColor, borderColor: colors.borderColor }]}
-            onPress={onToggleExpand}
-            activeOpacity={0.95}
-        >
-            <View style={styles.cardHeader}>
-                {item.imageUri ? (
-                    <Image source={{ uri: item.imageUri }} style={styles.cardImage} />
-                ) : (
-                    <View style={[styles.imagePlaceholder, { backgroundColor: colors.backgroundColor, borderColor: colors.borderColor }]}>
-                        <Ionicons
-                            name={isNote ? "document-text" : "image"}
-                            size={24}
-                            color={colors.textColor.light}
-                        />
-                    </View>
-                )}
-                
-                <View style={styles.cardContent}>
-                    <View style={styles.cardMeta}>
-                        <View
-                            style={[
-                                styles.featureBadge,
-                                {
-                                    backgroundColor: FEATURE_COLORS[item.feature] || FEATURE_COLORS.default,
-                                },
-                            ]}
-                        >
-                            <Text style={styles.featureBadgeText}>
-                                {formatFeatureName(item.feature)}
-                            </Text>
-                        </View>
-                        <Text style={[styles.timestamp, { color: colors.textColor.light }]}>{formatDate(item.createdAt)}</Text>
-                    </View>
-                    
-                    <Text
-                        numberOfLines={isExpanded ? undefined : 2}
-                        style={[styles.cardText, { color: colors.textColor.primary }, isNote && styles.noteTitle]}
-                    >
-                        {isNote ? item.extractedText : item.aiAnswer}
-                    </Text>
-                </View>
-                
-                <Ionicons
-                    name={isExpanded ? "chevron-up" : "chevron-down"}
-                    size={20}
-                    color={colors.textColor.light}
-                    style={styles.expandIcon}
+              </View>
+              <TouchableOpacity 
+                style={[styles.refreshButton, { backgroundColor: colors.primary }]}
+                onPress={loadUserData}
+                disabled={loading}
+              >
+                <Ionicons 
+                  name={loading ? "refresh" : "refresh-outline"} 
+                  size={16} 
+                  color="#ffffff" 
                 />
+              </TouchableOpacity>
             </View>
-            
-            {isExpanded && (
-                <View style={[styles.expandedContent, { borderTopColor: colors.borderColor }]}>
-                    <View style={[styles.expandedSection, { backgroundColor: colors.backgroundColor }]}>
-                        <Text style={[styles.expandedLabel, { color: colors.accentColor }]}>
-                            {isNote ? "Note Content:" : "Extracted Text:"}
-                        </Text>
-                        <ScrollView 
-                            style={styles.expandedScrollView}
-                            showsVerticalScrollIndicator={false}
-                        >
-                            <Text style={[styles.expandedText, { color: colors.textColor.secondary }]}>
-                                {isNote ? item.aiAnswer : item.extractedText}
-                            </Text>
-                        </ScrollView>
-                    </View>
-                </View>
-            )}
-        </TouchableOpacity>
-    );
-};
+          </View>
 
-const EmptyState: React.FC<{ colors: ReturnType<typeof getColors> }> = ({ colors }) => (
-    <View style={styles.emptyState}>
-        <View style={[styles.emptyIconContainer, { backgroundColor: colors.backgroundColor, borderColor: colors.borderColor }]}>
-            <Ionicons name="document-text-outline" size={64} color={colors.textColor.light} />
+          {/* Header Actions */}
+          <View style={styles.headerActions}>
+            <TouchableOpacity 
+              style={[styles.iconButton, { backgroundColor: colors.cardSecondary }]}
+              onPress={toggleTheme}
+            >
+              <Ionicons 
+                name={resolvedTheme === 'dark' ? "sunny-outline" : "moon-outline"} 
+                size={20} 
+                color={colors.iconPrimary} 
+              />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.iconButton, { backgroundColor: colors.cardSecondary }]}
+              onPress={() => router.push('/paywall')}
+            >
+              <Ionicons name="settings-outline" size={20} color={colors.iconPrimary} />
+            </TouchableOpacity>
+          </View>
         </View>
-        <Text style={[styles.emptyTitle, { color: colors.textColor.primary }]}>No History Yet</Text>
-        <Text style={[styles.emptySubtitle, { color: colors.textColor.secondary }]}>
-            Start scanning documents or creating notes to see your AI study history here!
-        </Text>
+
+        {/* Action Buttons */}
+        <View style={styles.actionButtons}>
+          <TouchableOpacity 
+            style={[styles.primaryButton, { backgroundColor: colors.primary }]}
+            onPress={() => setShowProfileEdit(true)}
+          >
+            <Text style={styles.buttonText}>Edit Profile</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.secondaryButton, { 
+              backgroundColor: colors.surface,
+              borderColor: colors.border
+            }]}
+            onPress={() => router.push('/paywall')}
+          >
+            <Text style={[styles.buttonTextSecondary, { color: textColor }]}>Get Credits</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
     </View>
-);
+  );
 
-// Main Component
-const Profile: React.FC = () => {
-    const { user, loading: authLoading, signIn, signUp, signOut } = useAuth();
-    const [history, setHistory] = useState<HistoryItem[]>([]);
-    const [activeFilter, setActiveFilter] = useState("All");
-    const [expandedItem, setExpandedItem] = useState<number | null>(null);
-    const [credits, setCredits] = useState<number>(0);
-    const [loading, setLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
-    const [stats, setStats] = useState<Stats>({
-        problemsSolved: 0,
-        daysActive: 0,
-        notesCreated: 0,
-    });
-    const { isPro } = usePurchases();
-    const router = useRouter();
-    
-    // Theme context
-    const { resolvedTheme, toggleTheme } = useThemeContext();
-    const COLORS = getColors(resolvedTheme === 'dark');
-
-    const [showAuth, setShowAuth] = useState(false);
-
-    const loadData = useCallback(async () => {
-        try {
-            const [historyData, creditsData, notesData] = await Promise.all([
-                getAllHistory(),
-                getCredits(),
-                getAllNotes(),
-            ]);
-            
-            setHistory(historyData);
-            setCredits(creditsData);
-
-            // Calculate stats
-            const problemsSolved = historyData.filter(
-                (item) => item.feature !== "notes" && item.feature !== "notes-updated"
-            ).length;
-            
-            const uniqueDays = new Set(
-                historyData.map((item) => 
-                    new Date(item.createdAt).toISOString().split("T")[0]
-                )
-            );
-            
-            setStats({
-                problemsSolved,
-                daysActive: uniqueDays.size,
-                notesCreated: notesData.length,
-            });
-        } catch (error) {
-            console.error("Error loading profile data:", error);
-        } finally {
-            setLoading(false);
-            setRefreshing(false);
-        }
-    }, []);
-
-    useFocusEffect(
-        useCallback(() => {
-            console.log("Profile screen focused, loading data...");
-            loadData();
-        }, [loadData])
-    );
-
-    const handleRefresh = useCallback(() => {
-        setRefreshing(true);
-        loadData();
-    }, [loadData]);
-
-    const handleToggleExpand = useCallback((id: number) => {
-        setExpandedItem(current => current === id ? null : id);
-    }, []);
-
-    const handleClearHistory = useCallback(() => {
-        Alert.alert(
-            'Clear History',
-            'Are you sure you want to clear all your study history? This action cannot be undone.',
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Clear All',
-                    style: 'destructive',
-                    onPress: () => {
-                        // Implement clearAllHistory function
-                        setHistory([]);
-                        setExpandedItem(null);
-                    }
-                }
-            ]
-        );
-    }, []);
-
-    const handleGetFreeCredits = useCallback(async () => {
-        try {
-            setLoading(true);
-            await addCredits(10);
-            await loadData();
-            Alert.alert("Success", "10 free credits have been added to your account!");
-        } catch (error) {
-            console.error("Error adding credits:", error);
-        }
-    }, [loadData]);
-
-    const handleGoPro = () => {
-        router.push('/paywall');
-    };
-
-    const filteredHistory = history.filter(
-        (item) => activeFilter === "All" || item.feature === activeFilter
-    );
-
-    const renderHistoryItem = ({ item }: ListRenderItemInfo<HistoryItem>) => (
-        <HistoryCard
-            item={item}
-            isExpanded={expandedItem === item.id}
-            onToggleExpand={() => handleToggleExpand(item.id)}
-            colors={COLORS}
-        />
-    );
-
-    const ListHeaderComponent = (
-        <>
-            <ProfileHeader
-                loading={loading}
-                credits={credits}
-                onRefresh={handleRefresh}
-                onClearHistory={handleClearHistory}
-                onGetFreeCredits={handleGetFreeCredits}
-                onGoPro={handleGoPro}
-                onToggleTheme={toggleTheme}
-                isDark={resolvedTheme === 'dark'}
-            />
-            {user ? (
-                <TouchableOpacity
-                    style={{ alignSelf: 'flex-end', marginRight: 24, marginBottom: 8, backgroundColor: '#ff6b6b', padding: 10, borderRadius: 8 }}
-                    onPress={signOut}
-                >
-                    <Text style={{ color: 'white', fontWeight: '700' }}>Sign Out</Text>
-                </TouchableOpacity>
-            ) : (
-                <TouchableOpacity
-                    style={{ alignSelf: 'flex-end', marginRight: 24, marginBottom: 8, backgroundColor: '#667eea', padding: 10, borderRadius: 8 }}
-                    onPress={() => setShowAuth(true)}
-                >
-                    <Text style={{ color: 'white', fontWeight: '700' }}>Login / Sign Up</Text>
-                </TouchableOpacity>
-            )}
-            <StatsCard stats={stats} loading={loading} colors={COLORS} />
-            <FilterSection
-                activeFilter={activeFilter}
-                onFilterChange={setActiveFilter}
-                colors={COLORS}
-            />
-            <Text style={[styles.historyTitle, { color: COLORS.textColor.primary }]}>Recent Activity</Text>
-        </>
-    );
-
-    return (
-        <View style={[styles.container, { backgroundColor: COLORS.backgroundColor }]}> 
-            <View style={{ height: 24 }} />
-            {showAuth && (
-                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10, backgroundColor: 'rgba(0,0,0,0.2)', justifyContent: 'center', alignItems: 'center' }}>
-                    <AuthScreen onAuthSuccess={() => setShowAuth(false)} onClose={() => setShowAuth(false)} />
-                </View>
-            )}
-            <FlatList
-                data={filteredHistory}
-                keyExtractor={(item) => item.id.toString()}
-                renderItem={renderHistoryItem}
-                ListHeaderComponent={ListHeaderComponent}
-                ListEmptyComponent={!loading ? <EmptyState colors={COLORS} /> : null}
-                contentContainerStyle={styles.listContent}
-                refreshControl={
-                    <RefreshControl
-                        refreshing={refreshing}
-                        onRefresh={handleRefresh}
-                        colors={[COLORS.accentColor]}
-                        tintColor={COLORS.accentColor}
-                    />
-                }
-                showsVerticalScrollIndicator={false}
-            />
+  const StatsSection = () => (
+    <View style={[styles.statsCard, { 
+      backgroundColor: colors.card,
+      borderColor: colors.border
+    }]}>
+      <View style={styles.cardHeader}>
+        <Text style={[styles.sectionTitle, { color: textColor }]}>Your Progress</Text>
+        <Ionicons name="trending-up-outline" size={24} color={colors.primary} />
+      </View>
+      
+      <View style={styles.statsGrid}>
+        <View style={styles.statItem}>
+          <Text style={[styles.statNumber, { color: colors.primary }]}>{stats.problemsSolved}</Text>
+          <Text style={[styles.statLabel, { color: colors.iconSecondary }]}>Problems Solved</Text>
         </View>
-    );
+        <View style={styles.statItem}>
+          <Text style={[styles.statNumber, { color: colors.success }]}>{stats.daysActive}</Text>
+          <Text style={[styles.statLabel, { color: colors.iconSecondary }]}>Days Active</Text>
+        </View>
+        <View style={styles.statItem}>
+          <Text style={[styles.statNumber, { color: colors.accent }]}>{stats.notesCreated}</Text>
+          <Text style={[styles.statLabel, { color: colors.iconSecondary }]}>Notes Created</Text>
+        </View>
+      </View>
+
+      <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+      <View style={styles.statsGrid}>
+        <View style={styles.statItem}>
+          <Text style={[styles.statNumber, { color: colors.secondary }]}>{stats.totalScans}</Text>
+          <Text style={[styles.statLabel, { color: colors.iconSecondary }]}>Total Scans</Text>
+        </View>
+        <View style={styles.statItem}>
+          <Text style={[styles.statNumber, { color: colors.warning }]}>{stats.quizzesCreated}</Text>
+          <Text style={[styles.statLabel, { color: colors.iconSecondary }]}>Quizzes</Text>
+        </View>
+        <View style={styles.statItem}>
+          <Text style={[styles.statNumber, { color: colors.danger }]}>{stats.flashCardsCreated}</Text>
+          <Text style={[styles.statLabel, { color: colors.iconSecondary }]}>Flash Cards</Text>
+        </View>
+      </View>
+    </View>
+  );
+
+  const QuickActionsSection = () => (
+    <View style={[styles.quickActionsCard, { 
+      backgroundColor: colors.card,
+      borderColor: colors.border
+    }]}>
+      <View style={styles.cardHeader}>
+        <Text style={[styles.sectionTitle, { color: textColor }]}>Quick Actions</Text>
+        <Ionicons name="flash-outline" size={24} color={colors.primary} />
+      </View>
+      
+      <View style={styles.quickActionsGrid}>
+        {quickActions.map((action) => (
+          <TouchableOpacity
+            key={action.id}
+            style={[styles.quickActionItem, { 
+              backgroundColor: colors.cardSecondary
+            }]}
+            onPress={() => handleQuickAction(action)}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: colors.primary }]}>
+              <Ionicons name={action.icon as any} size={24} color="#ffffff" />
+            </View>
+            <Text style={[styles.quickActionText, { color: textColor }]}>
+              {action.title}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+
+  const AchievementsSection = () => (
+    <View style={[styles.achievementsCard, { 
+      backgroundColor: colors.card,
+      borderColor: colors.border
+    }]}>
+      <View style={styles.cardHeader}>
+        <Text style={[styles.sectionTitle, { color: textColor }]}>Recent Achievements</Text>
+        <Ionicons name="trophy-outline" size={24} color={colors.primary} />
+      </View>
+      
+      <View style={styles.achievementsList}>
+        {achievements.slice(0, 3).map((achievement) => (
+          <View key={achievement.id} style={[styles.achievementItem, { 
+            backgroundColor: colors.cardSecondary
+          }]}>
+            <View style={[styles.achievementIcon, { 
+              backgroundColor: achievement.earned ? colors.success : colors.border,
+              opacity: achievement.earned ? 1 : 0.5
+            }]}>
+              <Ionicons 
+                name={achievement.icon as any} 
+                size={20} 
+                color="#ffffff" 
+              />
+            </View>
+            <View style={styles.achievementContent}>
+              <Text style={[styles.achievementTitle, { color: textColor }]}>
+                {achievement.title}
+              </Text>
+              <Text style={[styles.achievementDescription, { color: colors.iconSecondary }]}>
+                {achievement.description}
+              </Text>
+            </View>
+            {achievement.earned && (
+              <View style={[styles.earnedBadge, { backgroundColor: colors.success }]}>
+                <Ionicons name="checkmark" size={12} color="#ffffff" />
+              </View>
+            )}
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+
+  const StudyStreakSection = () => (
+    <View style={[styles.streakCard, { 
+      backgroundColor: colors.card,
+      borderColor: colors.border
+    }]}>
+      <View style={styles.cardHeader}>
+        <Text style={[styles.sectionTitle, { color: textColor }]}>Study Streak</Text>
+        <Ionicons name="flame-outline" size={24} color={colors.warning} />
+      </View>
+      
+      <View style={styles.streakContent}>
+        <View style={styles.streakNumber}>
+          <Text style={[styles.streakDays, { color: colors.warning }]}>{stats.daysActive}</Text>
+          <Text style={[styles.streakLabel, { color: colors.iconSecondary }]}>days</Text>
+        </View>
+        <View style={styles.streakProgress}>
+          <View style={[styles.progressBar, { 
+            backgroundColor: colors.cardSecondary
+          }]}>
+            <View style={[styles.progressFill, { 
+              backgroundColor: colors.warning,
+              width: `${Math.min((stats.daysActive / 7) * 100, 100)}%`
+            }]} />
+          </View>
+          <Text style={[styles.progressText, { color: colors.iconSecondary }]}>
+            {stats.daysActive >= 7 ? 'Great job! Keep it up!' : `${7 - stats.daysActive} more days to reach your goal!`}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+
+  const ProfileEditModal = () => (
+    <Modal visible={showProfileEdit} transparent animationType="slide">
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalContainer}>
+        <View style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
+          <View style={[styles.modalContent, { 
+            backgroundColor: colors.card
+          }]}>
+            <Text style={[styles.modalTitle, { color: textColor }]}>Edit Profile</Text>
+            
+                          <TextInput
+                style={[styles.input, { 
+                  backgroundColor: colors.cardSecondary,
+                  borderColor: colors.border,
+                  color: textColor
+                }]}
+                placeholder="New Email"
+                placeholderTextColor={colors.iconSecondary}
+                value={newEmail}
+                onChangeText={setNewEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+              
+              <TextInput
+                style={[styles.input, { 
+                  backgroundColor: colors.cardSecondary,
+                  borderColor: colors.border,
+                  color: textColor
+                }]}
+                placeholder="New Password"
+                placeholderTextColor={colors.iconSecondary}
+                value={newPassword}
+                onChangeText={setNewPassword}
+                secureTextEntry
+              />
+            
+            <TouchableOpacity 
+              style={[styles.modalButton, { backgroundColor: colors.primary }]}
+              onPress={() => {
+                Alert.alert('Success', 'Profile updated successfully!');
+                setShowProfileEdit(false);
+                setNewEmail('');
+                setNewPassword('');
+              }}
+            >
+              <Text style={styles.modalButtonText}>Save Changes</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.closeButton}
+              onPress={() => {
+                setShowProfileEdit(false);
+                setNewEmail('');
+                setNewPassword('');
+              }}
+            >
+              <Text style={[styles.closeText, { color: colors.iconSecondary }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+
+  return (
+    <View style={[styles.container, { backgroundColor }]}>
+      <ScrollView 
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
+        <ProfileHeader />
+        <StatsSection />
+        <QuickActionsSection />
+        <AchievementsSection />
+        <StudyStreakSection />
+      </ScrollView>
+      
+      <ProfileEditModal />
+    </View>
+  );
 };
 
-// Styles
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    listContent: {
-        paddingBottom: 20,
-    },
-    profileHeader: {
-        paddingTop: Platform.OS === 'ios' ? 60 : 50,
-        paddingHorizontal: 20,
-        paddingBottom: 20,
-    },
-    headerContent: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        marginBottom: 20,
-    },
-    userSection: {
-        flexDirection: 'row',
-        flex: 1,
-    },
-    avatar: {
-        marginRight: 16,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-    },
-    userInfo: {
-        flex: 1,
-    },
-    welcomeText: {
-        fontSize: 22,
-        fontWeight: '700',
-        marginBottom: 2,
-    },
-    subtitleText: {
-        fontSize: 14,
-        marginBottom: 12,
-    },
-    creditsContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-    },
-    creditsInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    creditsLabel: {
-        fontSize: 15,
-        marginLeft: 6,
-        fontWeight: '500',
-    },
-    creditsValue: {
-        fontSize: 18,
-        fontWeight: '700',
-        marginLeft: 4,
-    },
-    headerActions: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-    },
-    themeButton: {
-        borderRadius: 16,
-        padding: 12,
-    },
-    refreshButton: {
-        padding: 8,
-        borderRadius: 12,
-    },
-    clearButton: {
-        borderRadius: 16,
-        padding: 12,
-    },
-    buttonGroup: {
-        flexDirection: 'row',
-        marginTop: 16,
-        gap: 8,
-    },
-    creditsButton: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 12,
-        borderRadius: 12,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 5,
-        elevation: 6,
-        gap: 8,
-    },
-    proButton: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 12,
-        borderRadius: 12,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 5,
-        elevation: 6,
-        gap: 8,
-    },
-    creditsButtonText: {
-        fontSize: 14,
-        fontWeight: '600',
-    },
-    statsCard: {
-        borderRadius: 20,
-        padding: 24,
-        marginHorizontal: 20,
-        marginBottom: 20,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
-        elevation: 3,
-        borderWidth: 1,
-    },
-    sectionTitle: {
-        fontSize: 20,
-        fontWeight: '700',
-        marginBottom: 20,
-        textAlign: 'center',
-    },
-    statsGrid: {
-        flexDirection: 'row',
-        justifyContent: 'space-around',
-        alignItems: 'center',
-    },
-    statItem: {
-        alignItems: 'center',
-        flex: 1,
-    },
-    statNumber: {
-        fontSize: 28,
-        fontWeight: '800',
-        marginBottom: 4,
-    },
-    statLabel: {
-        fontSize: 12,
-        textAlign: 'center',
-        fontWeight: '500',
-    },
-    statDivider: {
-        width: 1,
-        height: 40,
-    },
-    filterSection: {
-        paddingVertical: 16,
-        marginBottom: 8,
-    },
-    filterScrollContent: {
-        paddingHorizontal: 20,
-    },
-    filterChip: {
-        paddingVertical: 10,
-        paddingHorizontal: 16,
-        borderRadius: 20,
-        marginRight: 12,
-        borderWidth: 1,
-    },
-    filterChipText: {
-        fontWeight: '600',
-        fontSize: 14,
-    },
-    historyCard: {
-        borderRadius: 16,
-        marginHorizontal: 20,
-        marginBottom: 12,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 8,
-        elevation: 2,
-        borderWidth: 1,
-    },
-    cardHeader: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        padding: 16,
-    },
-    cardImage: {
-        width: 56,
-        height: 56,
-        borderRadius: 12,
-        marginRight: 16,
-    },
-    imagePlaceholder: {
-        width: 56,
-        height: 56,
-        borderRadius: 12,
-        marginRight: 16,
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderWidth: 1,
-        borderStyle: 'dashed',
-    },
-    cardContent: {
-        flex: 1,
-    },
-    cardMeta: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 8,
-    },
-    featureBadge: {
-        borderRadius: 8,
-        paddingHorizontal: 10,
-        paddingVertical: 4,
-        marginRight: 12,
-    },
-    featureBadgeText: {
-        color: '#ffffff',
-        fontWeight: '600',
-        fontSize: 11,
-    },
-    timestamp: {
-        fontSize: 12,
-        marginLeft: 'auto',
-        fontWeight: '500',
-    },
-    cardText: {
-        fontSize: 15,
-        lineHeight: 22,
-    },
-    noteTitle: {
-        fontWeight: '600',
-    },
-    expandIcon: {
-        marginLeft: 12,
-        marginTop: 4,
-    },
-    expandedContent: {
-        borderTopWidth: 1,
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-    },
-    expandedSection: {
-        borderRadius: 12,
-        padding: 16,
-    },
-    expandedLabel: {
-        fontWeight: '600',
-        fontSize: 14,
-        marginBottom: 8,
-    },
-    expandedScrollView: {
-        maxHeight: 120,
-    },
-    expandedText: {
-        fontSize: 14,
-        lineHeight: 20,
-    },
-    emptyState: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 60,
-        paddingHorizontal: 40,
-    },
-    emptyIconContainer: {
-        width: 120,
-        height: 120,
-        borderRadius: 60,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 24,
-        borderWidth: 2,
-        borderStyle: 'dashed',
-    },
-    emptyTitle: {
-        fontSize: 20,
-        fontWeight: '600',
-        marginBottom: 8,
-        textAlign: 'center',
-    },
-    emptySubtitle: {
-        fontSize: 16,
-        textAlign: 'center',
-        lineHeight: 24,
-    },
-    historyTitle: {
-        fontSize: 20,
-        fontWeight: '700',
-        marginBottom: 20,
-        textAlign: 'center',
-    },
+  container: {
+    flex: 1,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 32,
+  },
+  
+  // Profile Header
+  profileHeader: {
+    paddingTop: 60,
+    paddingBottom: 24,
+  },
+  headerBackground: {
+    paddingHorizontal: 20,
+  },
+  headerContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 24,
+  },
+  avatarSection: {
+    marginRight: 16,
+  },
+  avatarContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  avatarText: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  statusDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    borderWidth: 3,
+    borderColor: '#ffffff',
+  },
+  userInfo: {
+    flex: 1,
+  },
+  greeting: {
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  userEmail: {
+    fontSize: 16,
+    marginBottom: 16,
+  },
+  creditsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  creditsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    flex: 1,
+  },
+  creditsIcon: {
+    fontSize: 16,
+    marginRight: 8,
+  },
+  creditsText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  refreshButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  iconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  primaryButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  secondaryButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  buttonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  buttonTextSecondary: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  
+  // Cards
+  statsCard: {
+    marginHorizontal: 20,
+    marginBottom: 20,
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  quickActionsCard: {
+    marginHorizontal: 20,
+    marginBottom: 20,
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  achievementsCard: {
+    marginHorizontal: 20,
+    marginBottom: 20,
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  streakCard: {
+    marginHorizontal: 20,
+    marginBottom: 20,
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  
+  // Stats
+  statsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 16,
+  },
+  statItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statNumber: {
+    fontSize: 28,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 12,
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  divider: {
+    height: 1,
+    marginVertical: 16,
+  },
+  
+  // Quick Actions
+  quickActionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  quickActionItem: {
+    width: '48%',
+    alignItems: 'center',
+    padding: 20,
+    borderRadius: 16,
+  },
+  quickActionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  quickActionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  
+  // Achievements
+  achievementsList: {
+    gap: 12,
+  },
+  achievementItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 16,
+  },
+  achievementIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  achievementContent: {
+    flex: 1,
+  },
+  achievementTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  achievementDescription: {
+    fontSize: 14,
+  },
+  earnedBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  
+  // Study Streak
+  streakContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 20,
+  },
+  streakNumber: {
+    alignItems: 'center',
+  },
+  streakDays: {
+    fontSize: 36,
+    fontWeight: '800',
+  },
+  streakLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  streakProgress: {
+    flex: 1,
+  },
+  progressBar: {
+    height: 8,
+    borderRadius: 4,
+    marginBottom: 8,
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  progressText: {
+    fontSize: 12,
+  },
+  
+  // Modal
+  modalContainer: {
+    flex: 1,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: '90%',
+    borderRadius: 20,
+    padding: 24,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  input: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 16,
+    fontSize: 16,
+  },
+  modalButton: {
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  closeButton: {
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  closeText: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
 });
 
 export default Profile;

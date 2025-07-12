@@ -15,12 +15,13 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+import EnhanceNotesModal from '../components/EnhanceNotesModal';
 import FlashCardGenerationModal from '../components/FlashCardGenerationModal';
 import FlashCardViewer from '../components/FlashCardViewer';
 import NoteReaderModal from '../components/NoteReaderModal';
 import QuizGenerationModal from '../components/QuizGenerationModal';
 import { useThemeContext } from '../providers/ThemeProvider';
-import { deleteNote, getAllNotes, Note } from '../services/historyStorage';
+import { deleteNote, getAllNotes, Note, updateNote } from '../services/historyStorage';
 
 // Dynamic color scheme based on theme
 const getColors = (isDark: boolean) => ({
@@ -51,6 +52,8 @@ export default function NotesScreen() {
     const [flashCardModalVisible, setFlashCardModalVisible] = useState(false);
     const [viewerModalVisible, setViewerModalVisible] = useState(false);
     const [isSearchFocused, setIsSearchFocused] = useState(false);
+    const [enhanceModalVisible, setEnhanceModalVisible] = useState(false);
+    const [enhanceTargetNote, setEnhanceTargetNote] = useState<Note | null>(null);
     const router = useRouter();
 
     // Theme context
@@ -139,6 +142,22 @@ export default function NotesScreen() {
     const closeFlashCardViewer = () => {
         setViewerModalVisible(false);
         setSelectedNote(null);
+    };
+
+    const openEnhanceModal = (note: Note) => {
+        setEnhanceTargetNote(note);
+        setEnhanceModalVisible(true);
+    };
+    const closeEnhanceModal = () => {
+        setEnhanceModalVisible(false);
+        setEnhanceTargetNote(null);
+    };
+    const handleNoteEnhanced = async (enhancedContent: string) => {
+        if (enhanceTargetNote) {
+            await updateNote(enhanceTargetNote.id, enhanceTargetNote.title, enhancedContent);
+            await loadNotes();
+        }
+        closeEnhanceModal();
     };
 
     const parseFlashCards = (content: string): { front: string; back: string }[] => {
@@ -255,6 +274,14 @@ export default function NotesScreen() {
                         onPress={() => openFlashCardModal(item)}
                     >
                         <Ionicons name="albums" size={18} color={COLORS.successColor} />
+                    </TouchableOpacity>
+                    
+                    {/* Enhance Notes Button */}
+                    <TouchableOpacity 
+                        style={[styles.actionButton, { backgroundColor: COLORS.backgroundColor }]}
+                        onPress={() => openEnhanceModal(item)}
+                    >
+                        <Ionicons name="sparkles-outline" size={18} color={COLORS.primary} />
                     </TouchableOpacity>
                     
                     {hasFlashCards && (
@@ -408,6 +435,15 @@ export default function NotesScreen() {
                 onClose={closeFlashCardViewer}
                 cards={selectedNote ? parseFlashCards(selectedNote.content) : []}
                 title={selectedNote?.title || ''}
+            />
+
+            <EnhanceNotesModal
+                visible={enhanceModalVisible}
+                onClose={closeEnhanceModal}
+                sourceContent={enhanceTargetNote?.content || ''}
+                sourceTitle={enhanceTargetNote?.title || ''}
+                sourceId={enhanceTargetNote?.id}
+                onNoteEnhanced={handleNoteEnhanced}
             />
         </SafeAreaView>
     );

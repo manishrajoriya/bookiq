@@ -13,64 +13,81 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import Purchases, { CustomerInfo, PurchasesOffering, PurchasesPackage } from 'react-native-purchases';
-import { addExpiringCredits, getCredits } from '../services/historyStorage';
+import { PurchasesPackage } from 'react-native-purchases';
+import { useSubscription } from '../hooks/useSubscription';
+import subscriptionService from '../services/subscriptionService';
 
 const { width: screenWidth } = Dimensions.get('window');
 
 const premiumFeatures = [
-  { icon: 'infinite', title: 'Unlimited AI Scans', subtitle: 'Scan any document without limits' },
-  { icon: 'library', title: 'Unlimited Quiz Generation', subtitle: 'Create endless practice quizzes' },
-  { icon: 'albums', title: 'Unlimited Flash Card Sets', subtitle: 'Build comprehensive study decks' },
-  { icon: 'headset', title: 'Priority Support', subtitle: '24/7 dedicated customer service' },
-  { icon: 'school', title: 'Access to All Subjects', subtitle: 'Every topic and discipline covered' },
-  { icon: 'shield-checkmark', title: 'Ad-Free Experience', subtitle: 'Focus without interruptions' },
+  { icon: 'book', title: 'Unlimited AI Scans', subtitle: 'Scan any document, anytime' },
+  { icon: 'bulb', title: 'Quiz Generator', subtitle: 'Create custom quizzes for any subject' },
+  { icon: 'flash', title: 'Flashcard Sets', subtitle: 'Build and review flashcards easily' },
+  { icon: 'school', title: 'All Subjects', subtitle: 'Full access to every topic' },
+  { icon: 'shield-checkmark', title: 'Ad-Free', subtitle: 'Study without distractions' },
+  { icon: 'chatbubbles', title: 'Priority Support', subtitle: 'Get help when you need it' },
 ];
 
 const reviews = [
   {
     name: 'Aarav S.',
-    rating: 5,
+    avatar: '🧑🏽‍🎓',
     text: 'BookIQ PRO helped me ace my exams! The AI features are a game changer.',
   },
   {
     name: 'Priya M.',
-    rating: 5,
+    avatar: '👩🏻‍🎓',
     text: 'The credits system is super fair and flexible. Highly recommend!',
   },
   {
     name: 'Rahul D.',
-    rating: 5,
+    avatar: '👨🏾‍🎓',
     text: 'I love being able to buy extra credits when I need them. 5 stars!',
   },
 ];
 
-const planCredits: Record<string, number> = {
-  weekly: 100,
-  monthly: 400,
-  yearly: 1000,
-};
-
-interface ErrorState {
-  hasError: boolean;
-  message: string;
-  type: 'network' | 'purchase' | 'restore' | 'general';
-}
+const faqs = [
+  {
+    q: 'What is BookIQ PRO?',
+    a: 'BookIQ PRO provides credits for AI-powered study tools like scans, quizzes, and flashcards to supercharge your learning.'
+  },
+  {
+    q: 'How do credits work?',
+    a: 'Credits are one-time purchases that give you access to AI features. You can buy multiple credit packs to get more access.'
+  },
+  {
+    q: 'Do credits expire?',
+    a: 'Yes, credits expire after their duration period (weekly, monthly, or yearly). Use them before they expire!'
+  },
+  {
+    q: 'Can I buy more credits?',
+    a: 'Absolutely! You can purchase multiple credit packs anytime to get more access to AI features.'
+  },
+];
 
 const PayWallModel = () => {
-  // State management
-  const [loading, setLoading] = useState(true);
+  console.log('PayWall: Component mounted');
+  
+  // Use the subscription hook
+  const {
+    isSubscribed,
+    currentPlan,
+    expirationDate,
+    credits,
+    loading,
+    error,
+    purchasePackage,
+    restorePurchases,
+    refreshCredits
+  } = useSubscription();
+  
+  // Local state
   const [refreshing, setRefreshing] = useState(false);
-  const [offerings, setOfferings] = useState<PurchasesOffering | null>(null);
   const [purchaseLoading, setPurchaseLoading] = useState<string | null>(null);
-  const [restoring, setRestoring] = useState(false);
-  const [subscribed, setSubscribed] = useState(false);
-  const [currentPlan, setCurrentPlan] = useState<string | null>(null);
-  const [expiryDate, setExpiryDate] = useState<string | null>(null);
-  const [credits, setCredits] = useState<number>(0);
-  const [error, setError] = useState<ErrorState>({ hasError: false, message: '', type: 'general' });
-  const [retryCount, setRetryCount] = useState(0);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
+  const [faqOpen, setFaqOpen] = useState<number | null>(null);
+  const [offerings, setOfferings] = useState<any>(null);
+  const [pendingPayment, setPendingPayment] = useState(false);
 
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -102,248 +119,123 @@ const PayWallModel = () => {
     ]).start();
   };
 
-  const clearError = useCallback(() => {
-    setError({ hasError: false, message: '', type: 'general' });
-  }, []);
-
-  const handleError = useCallback((message: string, type: ErrorState['type'] = 'general') => {
-    console.error(`PayWall Error (${type}):`, message);
-    setError({ hasError: true, message, type });
-  }, []);
-
   const fetchData = async (isRefresh = false) => {
     if (isRefresh) {
       setRefreshing(true);
-    } else {
-      setLoading(true);
     }
     
-    clearError();
-
     try {
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Request timeout')), 15000)
-      );
-
-      const dataPromise = Promise.all([
-        Purchases.getOfferings(),
-        Purchases.getCustomerInfo(),
-        getCredits(),
-      ]);
-
-      const [offeringsRes, customerInfo, creditsData] = await Promise.race([
-        dataPromise,
-        timeoutPromise
-      ]) as [any, CustomerInfo, number];
-
-      setOfferings(offeringsRes.current);
-      updateSubscriptionStatus(customerInfo);
-      setCredits(creditsData);
-      setRetryCount(0);
-    } catch (e: any) {
-      console.error('Fetch data error:', e);
-      
-      if (e.message === 'Request timeout') {
-        handleError('Connection timeout. Please check your internet connection.', 'network');
-      } else if (e.code === 'NETWORK_ERROR' || e.message.includes('network')) {
-        handleError('Network error. Please check your connection and try again.', 'network');
-      } else {
-        handleError('Failed to load subscription information. Please try again.', 'general');
+      const offeringsData = await subscriptionService.getOfferings();
+      if (offeringsData) {
+        setOfferings(offeringsData);
       }
-      
-      setRetryCount(prev => prev + 1);
+    } catch (error) {
+      console.error('PayWall: Failed to fetch offerings:', error);
     } finally {
-      setLoading(false);
       setRefreshing(false);
-    }
-  };
-
-  const updateSubscriptionStatus = (customerInfo: CustomerInfo) => {
-    try {
-      const proEntitlement = customerInfo.entitlements.active.pro;
-      if (proEntitlement) {
-        let formattedExpiryDate: string | null = null;
-        if (proEntitlement.expirationDate) {
-          const date = new Date(proEntitlement.expirationDate);
-          formattedExpiryDate = date.toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-          });
-        }
-        
-        setSubscribed(true);
-        setCurrentPlan(proEntitlement.productIdentifier);
-        setExpiryDate(formattedExpiryDate);
-      } else {
-        setSubscribed(false);
-        setCurrentPlan(null);
-        setExpiryDate(null);
-      }
-    } catch (e) {
-      console.error('Error updating subscription status:', e);
-      handleError('Failed to update subscription status.', 'general');
     }
   };
 
   const handlePurchase = async (pack: PurchasesPackage) => {
     setPurchaseLoading(pack.identifier);
-    clearError();
     
     try {
-      const { customerInfo } = await Purchases.purchasePackage(pack);
+      const result = await purchasePackage(pack);
       
-      const creditsToAdd = planCredits[pack.product.identifier.toLowerCase()] || 0;
-      let expirationDate: Date | null = null;
-      const planIdentifier = pack.product.identifier;
-      
-      if (planIdentifier.toLowerCase().includes('week')) {
-        const d = new Date();
-        d.setDate(d.getDate() + 7);
-        expirationDate = d;
-      } else if (planIdentifier.toLowerCase().includes('month')) {
-        const d = new Date();
-        d.setDate(d.getDate() + 30);
-        expirationDate = d;
-      } else if (planIdentifier.toLowerCase().includes('year')) {
-        const d = new Date();
-        d.setFullYear(d.getFullYear() + 1);
-        expirationDate = d;
-      }
-
-      if (creditsToAdd > 0 && expirationDate) {
-        const initialCredits = await getCredits();
-        await addExpiringCredits(creditsToAdd, expirationDate.toISOString());
-        const finalCredits = await getCredits();
-
-        if (finalCredits > initialCredits) {
-          setCredits(finalCredits);
-          setSubscribed(true);
-          setCurrentPlan(planIdentifier);
-          setExpiryDate(expirationDate.toLocaleDateString('en-US', {
-            year: 'numeric', month: 'long', day: 'numeric'
-          }));
-
+      if (result.success) {
+        if (result.credits && result.credits > 0) {
           Alert.alert(
             '🎉 Purchase Successful!',
-            `${creditsToAdd} credits have been added to your account.`,
+            `${result.credits} credits have been added to your account.`,
             [{ text: 'Awesome!', style: 'default' }]
           );
+        } else if (result.error) {
+          // Partial success - purchase worked but credits failed
+          Alert.alert(
+            '⚠️ Purchase Partially Successful',
+            result.error,
+            [
+              { text: 'Contact Support', style: 'default' },
+              { text: 'OK', style: 'cancel' }
+            ]
+          );
         } else {
-          handleError(`Your purchase was successful, but we failed to add credits to your account. Please contact support immediately.`, 'purchase');
+          Alert.alert(
+            '🎉 Purchase Successful!',
+            'Your purchase was completed successfully.',
+            [{ text: 'Great!', style: 'default' }]
+          );
         }
       } else {
-        updateSubscriptionStatus(customerInfo);
-        Alert.alert(
-          '🎉 Purchase Successful!',
-          'Your purchase was completed.',
-          [{ text: 'Great!', style: 'default' }]
-        );
+        // Handle specific error cases
+        let title = 'Purchase Failed';
+        let message = result.error || 'Please try again.';
+        let buttons = [{ text: 'OK', style: 'default' as const }];
+        
+        if (result.error?.includes('cancelled')) {
+          title = 'Purchase Cancelled';
+          message = 'You cancelled the purchase.';
+        } else if (result.error?.includes('network')) {
+          title = 'Network Error';
+          message = 'Please check your internet connection and try again.';
+        } else if (result.error?.includes('not allowed')) {
+          title = 'Purchase Not Allowed';
+          message = 'Please check your device settings and try again.';
+        } else if (result.isPending || result.error?.includes('pending')) {
+          title = 'Payment Processing';
+          message = 'Your payment is being processed and will be confirmed shortly. We\'ll automatically check for updates.';
+          buttons = [{ text: 'OK', style: 'default' }];
+          
+          // Set pending payment state
+          setPendingPayment(true);
+          
+          // Auto-refresh after a few seconds for pending payments
+          setTimeout(() => {
+            refreshCredits();
+            setPendingPayment(false);
+          }, 5000);
+        }
+        
+        Alert.alert(title, message, buttons);
       }
-    } catch (e: any) {
-      // Suppress logging for user cancellation errors
-      if (
-        e.userCancelled ||
-        e.code === 'PurchaseCancelledError' ||
-        e.code === 'USER_CANCELED' ||
-        (e.message && e.message.toLowerCase().includes('cancel'))
-      ) {
-        setPurchaseLoading(null);
-        return;
-      }
-      // Only log unexpected errors
-      
-      switch (e.code) {
-        case 'PURCHASE_NOT_ALLOWED_ERROR':
-          handleError('Purchases are not allowed on this device. Please check your device settings.', 'purchase');
-          break;
-        case 'PAYMENT_PENDING_ERROR':
-          Alert.alert(
-            'Payment Pending',
-            'Your payment is being processed. You will receive access once the payment is confirmed.',
-            [{ text: 'OK', style: 'default' }]
-          );
-          break;
-        case 'PRODUCT_NOT_AVAILABLE_FOR_PURCHASE_ERROR':
-          handleError('This subscription is currently unavailable. Please try again later.', 'purchase');
-          break;
-        case 'PRODUCT_ALREADY_PURCHASED_ERROR':
-          handleError('You already own this item. Please try restoring your purchases.', 'purchase');
-          break;
-        case 'RECEIPT_IN_USE_BY_OTHER_SUBSCRIBER_ERROR':
-          handleError('This purchase is linked to another user account. Please login to that account or contact support.', 'purchase');
-          break;
-        default:
-          handleError(e.message || 'Purchase failed. Please try again.', 'purchase');
-          break;
-      }
+    } catch (error: any) {
+      console.error('PayWall: Purchase error:', error);
+      Alert.alert('Purchase Failed', 'An unexpected error occurred. Please try again.');
     } finally {
       setPurchaseLoading(null);
     }
   };
 
-  // const handleRestore = async () => {
-  //   setRestoring(true);
-  //   clearError();
-    
-  //   try {
-  //     const customerInfo = await Purchases.restorePurchases();
-  //     updateSubscriptionStatus(customerInfo);
-      
-  //     if (Object.keys(customerInfo.entitlements.active).length > 0) {
-  //       Alert.alert(
-  //         '🎉 Purchases Restored!', 
-  //         'Your previous purchases have been successfully restored.',
-  //         [{ text: 'Great!', style: 'default' }]
-  //       );
-  //     } else {
-  //       Alert.alert(
-  //         'No Purchases Found',
-  //         'No previous purchases were found to restore. If you believe this is an error, please contact support.',
-  //         [{ text: 'OK', style: 'default' }]
-  //       );
-  //     }
-  //   } catch (e: any) {
-  //     console.error('Restore error:', e);
-  //     handleError('Failed to restore purchases. Please try again or contact support.', 'restore');
-  //   } finally {
-  //     setRestoring(false);
-  //   }
-  // };
-
   const onRefresh = useCallback(() => {
     fetchData(true);
   }, []);
 
-  const retryAction = useCallback(() => {
-    if (error.type === 'network' && retryCount < 3) {
-      fetchData();
-    } else {
-      clearError();
-      fetchData();
+  const checkPurchaseStatus = useCallback(async () => {
+    try {
+      // Refresh subscription data to check if pending payment was confirmed
+      await refreshCredits();
+      Alert.alert(
+        'Status Checked',
+        'Your purchase status has been updated. If your payment was confirmed, credits should now be available.',
+        [{ text: 'OK', style: 'default' }]
+      );
+    } catch (error) {
+      Alert.alert(
+        'Status Check Failed',
+        'Unable to check purchase status. Please try again later.',
+        [{ text: 'OK', style: 'default' }]
+      );
     }
-  }, [error.type, retryCount]);
-
-  const renderStars = (rating: number) => {
-    return Array.from({ length: 5 }, (_, i) => (
-      <Ionicons
-        key={i}
-        name={i < rating ? 'star' : 'star-outline'}
-        size={16}
-        color="#FFD700"
-        style={{ marginRight: 2 }}
-      />
-    ));
-  };
+  }, [refreshCredits]);
 
   const ErrorModal = () => (
     <Modal
-      visible={error.hasError}
+      visible={!!error}
       transparent
       animationType="fade"
-      onRequestClose={clearError}
+      onRequestClose={() => {}}
     >
-      <Pressable style={styles.modalOverlay} onPress={clearError}>
+      <Pressable style={styles.modalOverlay}>
         <Animated.View 
           style={[
             styles.errorModal,
@@ -354,27 +246,23 @@ const PayWallModel = () => {
           ]}
         >
           <Ionicons 
-            name={error.type === 'network' ? 'wifi-outline' : 'alert-circle-outline'} 
+            name="alert-circle-outline" 
             size={48} 
             color="#FF6B6B" 
           />
-          <Text style={styles.errorTitle}>
-            {error.type === 'network' ? 'Connection Issue' : 'Something went wrong'}
-          </Text>
-          <Text style={styles.errorMessage}>{error.message}</Text>
+          <Text style={styles.errorTitle}>Something went wrong</Text>
+          <Text style={styles.errorMessage}>{error}</Text>
           <View style={styles.errorActions}>
             <TouchableOpacity 
               style={styles.errorButton} 
-              onPress={retryAction}
+              onPress={onRefresh}
               activeOpacity={0.7}
             >
-              <Text style={styles.errorButtonText}>
-                {retryCount > 0 ? `Retry (${retryCount}/3)` : 'Retry'}
-              </Text>
+              <Text style={styles.errorButtonText}>Retry</Text>
             </TouchableOpacity>
             <TouchableOpacity 
               style={styles.errorCancelButton} 
-              onPress={clearError}
+              onPress={() => {}}
               activeOpacity={0.7}
             >
               <Text style={styles.errorCancelText}>Dismiss</Text>
@@ -385,11 +273,22 @@ const PayWallModel = () => {
     </Modal>
   );
 
+  console.log('PayWall: Component render state:', { loading, offerings: !!offerings, error: !!error });
+  console.log('PayWall: Current state:', {
+    loading,
+    offerings: offerings ? 'Available' : 'Not available',
+    offeringsCount: offerings?.availablePackages?.length || 0,
+    selectedPlan,
+    isSubscribed,
+    currentPlan,
+    credits: credits.total
+  });
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#7C3AED" />
-        <Text style={styles.loadingText}>Loading your subscription options...</Text>
+        <ActivityIndicator size="large" color="#6C63FF" />
+        <Text style={styles.loadingText}>Loading your study upgrade options...</Text>
         <Text style={styles.loadingSubtext}>This may take a moment</Text>
       </View>
     );
@@ -400,97 +299,195 @@ const PayWallModel = () => {
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <Animated.View style={[styles.content, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>  
           {/* Header */}
-          <View style={styles.snapHeaderContainer}>
-            <View style={styles.snapHeaderIconWrap}>
-              <Ionicons name="diamond" size={40} color="#FFD700" />
+          <View style={styles.headerContainer}>
+            <View style={styles.headerIconWrap}>
+              <Ionicons name="school" size={44} color="#6C63FF" />
             </View>
-            <Text style={styles.snapHeaderTitle}>Save 60% on BookIQ PRO</Text>
+            <Text style={styles.headerTitle}>Get AI Study Credits</Text>
+            <Text style={styles.headerSubtitle}>Purchase credits to unlock AI-powered learning tools</Text>
+            <TouchableOpacity 
+              style={styles.debugRefreshButton} 
+              onPress={() => fetchData(true)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="refresh-outline" size={20} color="#6C63FF" />
+              <Text style={styles.debugRefreshText}>Refresh</Text>
+            </TouchableOpacity>
           </View>
 
-          {/* Offer Bar */}
-          <View style={styles.offerBar}>
-            <View style={{flex: 1}}>
-              <Text style={styles.offerBarText}>SPECIAL OFFER</Text>
-              {/* Benefits list */}
-              <View style={{marginTop: 8}}>
-                {premiumFeatures.map((feature, idx) => (
-                  <View key={idx} style={{flexDirection: 'row', alignItems: 'center', marginBottom: 4}}>
-                    <Ionicons name="checkmark" size={16} color="#181818" style={{marginRight: 6}} />
-                    <Text style={{color: '#181818', fontSize: 13, fontWeight: 'bold'}}>{feature.title}</Text>
-                  </View>
-                ))}
+          {/* Feature List */}
+          <View style={styles.featuresSection}>
+            {premiumFeatures.map((feature, idx) => (
+              <View key={idx} style={styles.featureCard}>
+                <Ionicons name={feature.icon as any} size={24} color="#6C63FF" style={{marginRight: 12}} />
+                <View>
+                  <Text style={styles.featureTitle}>{feature.title}</Text>
+                  <Text style={styles.featureSubtitle}>{feature.subtitle}</Text>
+                </View>
               </View>
-            </View>
-            <Ionicons name="checkmark-circle" size={22} color="#181818" style={styles.offerBarCheck} />
+            ))}
+          </View>
+
+          {/* Quick Purchase Section */}
+          <View style={styles.quickPurchaseSection}>
+            <Text style={styles.quickPurchaseHeader}>Quick Purchase</Text>
+            <Text style={styles.quickPurchaseSubtext}>Get started with our most popular option</Text>
+            {offerings && offerings.availablePackages && offerings.availablePackages.length > 0 && (
+              <TouchableOpacity
+                style={styles.quickPurchaseBtn}
+                onPress={() => {
+                  const weeklyPack = offerings.availablePackages.find((p: any) => 
+                    p.product.identifier.toLowerCase().includes('week')
+                  );
+                  if (weeklyPack) handlePurchase(weeklyPack);
+                }}
+                disabled={!!purchaseLoading}
+                activeOpacity={0.8}
+              >
+                {purchaseLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <>
+                    <Text style={styles.quickPurchaseBtnText}>Get Weekly Credits</Text>
+                    <Text style={styles.quickPurchaseBtnPrice}>₹250</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Plans */}
-          <View style={styles.snapPlansContainer}>
-            {offerings && offerings.availablePackages.length > 0 ? (
-              offerings.availablePackages.map((pack, idx) => {
-                const oldPrice = pack.product.priceString === '$1.99' ? '$4.99' : '$2.50';
+          <View style={styles.plansSection}>
+            <Text style={styles.plansHeader}>Choose your credit pack</Text>
+            {offerings && offerings.availablePackages && offerings.availablePackages.length > 0 ? (
+              offerings.availablePackages.map((pack: any, idx: number) => {
                 const isSelected = selectedPlan === pack.identifier;
                 const isBestValue = pack.product.identifier.toLowerCase().includes('year');
-                const isNoAds = pack.product.identifier.toLowerCase().includes('platinum');
                 return (
-                  <TouchableOpacity
-                    key={pack.identifier}
-                    style={[styles.snapPlanCard, isSelected && styles.snapPlanCardSelected]}
-                    onPress={() => setSelectedPlan(pack.identifier)}
-                    activeOpacity={0.8}
-                    disabled={!!purchaseLoading}
-                  >
-                    {/* Badges */}
-                    {isBestValue && <View style={styles.snapBadge}><Text style={styles.snapBadgeText}>BEST VALUE</Text></View>}
-                    {isNoAds && <View style={styles.snapBadgeNoAds}><Text style={styles.snapBadgeNoAdsText}>NO ADS</Text></View>}
-                    {/* Checkmark */}
-                    {isSelected && <Ionicons name="checkmark-circle" size={24} color="#FFD700" style={styles.snapCheckmark} />}
-                    {/* Plan info */}
-                    <View style={styles.snapPlanRow}>
-                      <Text style={styles.snapPlanName}>{pack.product.title.replace(' (BookIQ)', '')}</Text>
-                      <View style={styles.snapPlanPriceRow}>
-                        <Text style={styles.snapPlanOldPrice}>{oldPrice}</Text>
-                        <Text style={styles.snapPlanNewPrice}>{pack.product.priceString}</Text>
-                      </View>
+                  <View key={pack.identifier} style={[styles.planCard, isSelected && styles.planCardSelected]}>
+                    {isBestValue && <View style={styles.bestValueBadge}><Text style={styles.bestValueText}>Best Value</Text></View>}
+                    <View style={styles.planCardRow}>
+                      <Text style={styles.planTitle}>{pack.product.title.replace(' (BookIQ)', '')}</Text>
+                      <Text style={styles.planPrice}>{pack.product.priceString}</Text>
                     </View>
-                  </TouchableOpacity>
+                    <Text style={styles.planDesc}>{pack.product.description}</Text>
+                    
+                    {/* Individual Purchase Button */}
+                    <TouchableOpacity
+                      style={[
+                        styles.planPurchaseBtn,
+                        purchaseLoading === pack.identifier && styles.planPurchaseBtnLoading
+                      ]}
+                      onPress={() => handlePurchase(pack)}
+                      disabled={!!purchaseLoading}
+                      activeOpacity={0.8}
+                    >
+                      {purchaseLoading === pack.identifier ? (
+                        <ActivityIndicator color="#fff" size="small" />
+                      ) : (
+                        <Text style={styles.planPurchaseBtnText}>Purchase</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
                 );
               })
             ) : (
               <View style={styles.noPlansContainer}>
                 <Ionicons name="alert-circle-outline" size={48} color="#9CA3AF" />
-                <Text style={styles.noPlansText}>No subscription plans available</Text>
+                <Text style={styles.noPlansText}>
+                  {offerings ? 'No subscription plans available' : 'Loading subscription plans...'}
+                </Text>
+                <Text style={styles.noPlansSubtext}>
+                  {offerings ? 'Please check back later or contact support.' : 'Please wait while we load the available plans.'}
+                </Text>
                 <TouchableOpacity onPress={() => fetchData()} style={styles.retryButton} activeOpacity={0.7}>
-                  <Text style={styles.retryButtonText}>Retry</Text>
+                  <Text style={styles.retryButtonText}>
+                    {offerings ? 'Retry' : 'Refresh'}
+                  </Text>
                 </TouchableOpacity>
               </View>
             )}
           </View>
 
-          {/* Subscribe Button */}
-          <TouchableOpacity
-            style={styles.snapSubscribeBtn}
-            onPress={() => {
-              if (selectedPlan && offerings) {
-                const pack = offerings.availablePackages.find(p => p.identifier === selectedPlan);
-                if (pack) handlePurchase(pack);
-              }
-            }}
-            disabled={!selectedPlan || !!purchaseLoading}
-            activeOpacity={0.8}
-          >
-            {purchaseLoading ? (
-              <ActivityIndicator color="#000" />
+          {/* Sticky Purchase Button */}
+          <View style={styles.stickyUpgradeWrap}>
+            {selectedPlan && offerings ? (
+              <TouchableOpacity
+                style={styles.upgradeBtn}
+                onPress={() => {
+                  const pack = offerings.availablePackages.find((p: any) => p.identifier === selectedPlan);
+                  if (pack) handlePurchase(pack);
+                }}
+                disabled={!!purchaseLoading}
+                activeOpacity={0.9}
+              >
+                {purchaseLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <>
+                    <Text style={styles.upgradeBtnText}>Purchase Selected Plan</Text>
+                    <Text style={styles.upgradeBtnSubtext}>
+                      {offerings.availablePackages.find((p: any) => p.identifier === selectedPlan)?.product.priceString}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
             ) : (
-              <Text style={styles.snapSubscribeBtnText}>Subscribe</Text>
+              <View style={styles.noSelectionContainer}>
+                <Text style={styles.noSelectionText}>Select a plan to purchase</Text>
+              </View>
             )}
-          </TouchableOpacity>
-
-          {/* Footer */}
-          <View style={styles.snapFooter}>
-            <Text style={styles.snapFooterText}>
-              Features can change at any time. Payment will be charged to your App Store account. This is one time payment.
+            
+                      {/* Credit Info */}
+          <View style={styles.creditInfoContainer}>
+            <Text style={styles.creditInfoText}>
+              💡 Purchase multiple times to get more credits!
             </Text>
+            <Text style={styles.creditInfoSubtext}>
+              Credits expire after their duration period
+            </Text>
+            <Text style={styles.creditInfoAuth}>
+              🔐 Log in to sync credits across devices
+            </Text>
+          </View>
+
+          {/* Pending Payment Indicator */}
+          {pendingPayment && (
+            <View style={styles.pendingPaymentContainer}>
+              <Ionicons name="time-outline" size={20} color="#F59E0B" />
+              <Text style={styles.pendingPaymentText}>
+                Payment processing... Checking for updates
+              </Text>
+            </View>
+          )}
+          </View>
+
+          {/* Testimonials */}
+          <View style={styles.testimonialsSection}>
+            <Text style={styles.testimonialsHeader}>What students say</Text>
+            {reviews.map((review, idx) => (
+              <View key={idx} style={styles.testimonialCard}>
+                <Text style={styles.testimonialAvatar}>{review.avatar}</Text>
+                <View style={{flex: 1}}>
+                  <Text style={styles.testimonialText}>{review.text}</Text>
+                  <Text style={styles.testimonialName}>— {review.name}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+
+          {/* FAQ Section */}
+          <View style={styles.faqSection}>
+            <Text style={styles.faqHeader}>FAQs</Text>
+            {faqs.map((faq, idx) => (
+              <View key={idx}>
+                <TouchableOpacity onPress={() => setFaqOpen(faqOpen === idx ? null : idx)} style={styles.faqQuestionRow}>
+                  <Text style={styles.faqQuestion}>{faq.q}</Text>
+                  <Ionicons name={faqOpen === idx ? 'chevron-up' : 'chevron-down'} size={20} color="#6C63FF" />
+                </TouchableOpacity>
+                {faqOpen === idx && <Text style={styles.faqAnswer}>{faq.a}</Text>}
+              </View>
+            ))}
           </View>
         </Animated.View>
       </ScrollView>
@@ -502,23 +499,24 @@ const PayWallModel = () => {
 const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
-    backgroundColor: '#181818',
+    backgroundColor: '#F7F8FA',
+    paddingBottom: 120,
   },
   content: {
     paddingBottom: 40,
-    backgroundColor: '#181818',
+    backgroundColor: '#F7F8FA',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#181818',
+    backgroundColor: '#F7F8FA',
     padding: 20,
   },
   loadingText: {
     marginTop: 16,
     fontSize: 18,
-    color: '#1F2937',
+    color: '#22223B',
     textAlign: 'center',
     fontFamily: 'Inter-SemiBold',
   },
@@ -529,16 +527,21 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontFamily: 'Inter-Regular',
   },
-  snapHeaderContainer: {
-    backgroundColor: '#181818',
+  headerContainer: {
     alignItems: 'center',
     paddingTop: 36,
     paddingBottom: 16,
+    backgroundColor: '#fff',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
+    marginBottom: 8,
+    shadowColor: '#6C63FF',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  snapHeaderIconWrap: {
-    backgroundColor: '#222',
+  headerIconWrap: {
+    backgroundColor: '#EDEBFE',
     borderRadius: 40,
     width: 64,
     height: 64,
@@ -546,125 +549,347 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 8,
   },
-  snapHeaderTitle: {
-    color: '#fff',
+  headerTitle: {
+    color: '#22223B',
     fontSize: 22,
     fontWeight: 'bold',
-    marginBottom: 8,
+    marginBottom: 4,
     textAlign: 'center',
   },
-  snapPlansContainer: {
-    marginTop: 12,
-    marginBottom: 12,
-    paddingHorizontal: 12,
+  headerSubtitle: {
+    color: '#6C63FF',
+    fontSize: 15,
+    textAlign: 'center',
+    marginBottom: 8,
   },
-  snapPlanCard: {
-    backgroundColor: '#232323',
-    borderRadius: 18,
+  featuresSection: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    marginHorizontal: 16,
+    marginBottom: 18,
+    padding: 16,
+    shadowColor: '#6C63FF',
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  featureCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  featureTitle: {
+    color: '#22223B',
+    fontWeight: 'bold',
+    fontSize: 15,
+  },
+  featureSubtitle: {
+    color: '#6B7280',
+    fontSize: 13,
+  },
+  quickPurchaseSection: {
+    marginHorizontal: 16,
+    marginBottom: 18,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#6C63FF',
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  quickPurchaseHeader: {
+    color: '#22223B',
+    fontWeight: 'bold',
+    fontSize: 18,
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  quickPurchaseSubtext: {
+    color: '#6B7280',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  quickPurchaseBtn: {
+    backgroundColor: '#6C63FF',
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickPurchaseBtnText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  quickPurchaseBtnPrice: {
+    color: '#fff',
+    fontSize: 14,
+    marginTop: 2,
+    opacity: 0.9,
+  },
+  plansSection: {
+    marginHorizontal: 16,
+    marginBottom: 18,
+  },
+  plansHeader: {
+    color: '#22223B',
+    fontWeight: 'bold',
+    fontSize: 17,
+    marginBottom: 10,
+  },
+  planCard: {
+    backgroundColor: '#fff',
+    borderRadius: 14,
     padding: 18,
     marginBottom: 14,
     borderWidth: 2,
     borderColor: 'transparent',
     position: 'relative',
+    shadowColor: '#6C63FF',
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
   },
-  snapPlanCardSelected: {
-    borderColor: '#FFD700',
-    shadowColor: '#FFD700',
-    shadowOpacity: 0.2,
+  planCardSelected: {
+    borderColor: '#6C63FF',
+    shadowColor: '#6C63FF',
+    shadowOpacity: 0.12,
     shadowRadius: 8,
     zIndex: 2,
   },
-  snapBadge: {
+  bestValueBadge: {
     position: 'absolute',
     top: 10,
-    left: 10,
-    backgroundColor: '#FFD700',
+    right: 10,
+    backgroundColor: '#6C63FF',
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 2,
     zIndex: 2,
   },
-  snapBadgeText: {
-    color: '#181818',
+  bestValueText: {
+    color: '#fff',
     fontWeight: 'bold',
     fontSize: 11,
   },
-  snapBadgeNoAds: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    zIndex: 2,
-  },
-  snapBadgeNoAdsText: {
-    color: '#181818',
-    fontWeight: 'bold',
-    fontSize: 11,
-  },
-  snapCheckmark: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    zIndex: 3,
-  },
-  snapPlanRow: {
+  planCardRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 6,
   },
-  snapPlanName: {
-    color: '#fff',
+  planTitle: {
+    color: '#22223B',
     fontWeight: 'bold',
-    fontSize: 17,
+    fontSize: 16,
   },
-  snapPlanPriceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  snapPlanOldPrice: {
-    color: '#aaa',
-    textDecorationLine: 'line-through',
-    fontSize: 15,
-    marginRight: 8,
-  },
-  snapPlanNewPrice: {
-    color: '#FFD700',
+  planPrice: {
+    color: '#6C63FF',
     fontWeight: 'bold',
     fontSize: 18,
   },
-  snapPlanDesc: {
-    color: '#eee',
+  planDesc: {
+    color: '#6B7280',
     fontSize: 13,
     marginTop: 4,
   },
-  snapSubscribeBtn: {
-    backgroundColor: '#FFD700',
-    borderRadius: 24,
-    marginHorizontal: 16,
-    marginTop: 10,
-    marginBottom: 18,
-    paddingVertical: 16,
+  planPurchaseBtn: {
+    backgroundColor: '#6C63FF',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    marginTop: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  snapSubscribeBtnText: {
-    color: '#181818',
+  planPurchaseBtnLoading: {
+    backgroundColor: '#9CA3AF',
+  },
+  planPurchaseBtnText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  stickyUpgradeWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#fff',
+    padding: 16,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    shadowColor: '#6C63FF',
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 8,
+    alignItems: 'center',
+  },
+  upgradeBtn: {
+    backgroundColor: '#6C63FF',
+    borderRadius: 24,
+    paddingVertical: 16,
+    paddingHorizontal: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  upgradeBtnText: {
+    color: '#fff',
     fontWeight: 'bold',
     fontSize: 18,
   },
-  snapFooter: {
-    marginTop: 8,
-    marginBottom: 16,
-    paddingHorizontal: 18,
+  upgradeBtnSubtext: {
+    color: '#fff',
+    fontSize: 14,
+    opacity: 0.9,
+    marginTop: 2,
   },
-  snapFooterText: {
-    color: '#aaa',
+  noSelectionContainer: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 24,
+    paddingVertical: 16,
+    paddingHorizontal: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  noSelectionText: {
+    color: '#6B7280',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  restoreCreditsBtn: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#6C63FF',
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    marginTop: 12,
+    alignItems: 'center',
+  },
+  restoreCreditsBtnText: {
+    color: '#6C63FF',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  creditInfoContainer: {
+    alignItems: 'center',
+    marginTop: 12,
+    paddingHorizontal: 16,
+  },
+  creditInfoText: {
+    color: '#6C63FF',
+    fontWeight: '600',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  creditInfoSubtext: {
+    color: '#6B7280',
     fontSize: 12,
     textAlign: 'center',
+    marginTop: 4,
+  },
+  creditInfoAuth: {
+    color: '#6C63FF',
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 6,
+    fontWeight: '500',
+  },
+  pendingPaymentContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FEF3C7',
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginTop: 12,
+  },
+  pendingPaymentText: {
+    color: '#92400E',
+    fontSize: 12,
+    fontWeight: '500',
+    marginLeft: 6,
+  },
+  testimonialsSection: {
+    marginHorizontal: 16,
+    marginBottom: 18,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: '#6C63FF',
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  testimonialsHeader: {
+    color: '#22223B',
+    fontWeight: 'bold',
+    fontSize: 16,
+    marginBottom: 10,
+  },
+  testimonialCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  testimonialAvatar: {
+    fontSize: 28,
+    marginRight: 12,
+  },
+  testimonialText: {
+    color: '#22223B',
+    fontSize: 14,
+    marginBottom: 2,
+  },
+  testimonialName: {
+    color: '#6B7280',
+    fontSize: 12,
+    fontStyle: 'italic',
+  },
+  faqSection: {
+    marginHorizontal: 16,
+    marginBottom: 32,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: '#6C63FF',
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  faqHeader: {
+    color: '#22223B',
+    fontWeight: 'bold',
+    fontSize: 16,
+    marginBottom: 10,
+  },
+  faqQuestionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  faqQuestion: {
+    color: '#22223B',
+    fontWeight: '600',
+    fontSize: 14,
+    flex: 1,
+  },
+  faqAnswer: {
+    color: '#6B7280',
+    fontSize: 13,
+    marginTop: 4,
+    marginBottom: 8,
+    paddingLeft: 2,
   },
   modalOverlay: {
     flex: 1,
@@ -710,7 +935,7 @@ const styles = StyleSheet.create({
   },
   errorButton: {
     flex: 1,
-    backgroundColor: '#7C3AED',
+    backgroundColor: '#6C63FF',
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 12,
@@ -748,12 +973,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#6B7280',
     marginTop: 16,
+    marginBottom: 8,
+    textAlign: 'center',
+    fontFamily: 'Inter-Regular',
+  },
+  noPlansSubtext: {
+    fontSize: 14,
+    color: '#9CA3AF',
     marginBottom: 20,
     textAlign: 'center',
     fontFamily: 'Inter-Regular',
   },
   retryButton: {
-    backgroundColor: '#7C3AED',
+    backgroundColor: '#6C63FF',
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 12,
@@ -763,33 +995,20 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontFamily: 'Inter-SemiBold',
   },
-  offerBar: {
+  debugRefreshButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFD700',
-    borderRadius: 14,
-    marginHorizontal: 18,
-    marginTop: 18,
-    marginBottom: 18,
-    paddingVertical: 8,
-    shadowColor: '#FFD700',
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
-    position: 'relative',
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginTop: 8,
   },
-  offerBarText: {
-    color: '#181818',
-    fontWeight: 'bold',
-    fontSize: 15,
-    letterSpacing: 1,
-    flex: 1,
-    textAlign: 'center',
-  },
-  offerBarCheck: {
-    position: 'absolute',
-    right: 16,
+  debugRefreshText: {
+    color: '#6C63FF',
+    fontSize: 12,
+    fontWeight: '500',
+    marginLeft: 4,
   },
 });
 

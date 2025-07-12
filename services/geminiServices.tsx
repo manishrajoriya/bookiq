@@ -205,4 +205,33 @@ BACK: [Definition/Answer 2]
   }
 };
 
+export const generateEnhancedNotes = async (
+  notesContent: string
+): Promise<string> => {
+  const supabaseEdgeUrl = `https://mnjhkeygyczkziowlrab.supabase.co/functions/v1/enhancenotes`;
+  const supabaseBearerToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1uamhrZXlneWN6a3ppb3dscmFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE4ODQ4NzcsImV4cCI6MjA2NzQ2MDg3N30.9unaHI1ZXmSLMDf1szwmsR6oGXpDrn7-MTH-YXH5hng';
+
+  try {
+    const response = await axios.post(
+      supabaseEdgeUrl,
+      { notesContent }, // <-- correct key
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseBearerToken}`,
+        },
+      }
+    );
+
+    if (!response.data?.enhancedNotes) {
+      throw new Error('No valid response received from  Function');
+    }
+
+    return response.data.enhancedNotes;
+  } catch (error) {
+    console.error('Error enhancing notes:', error);
+    throw new Error('Failed to enhance notes. Please try again later.');
+  }
+};
+
 
