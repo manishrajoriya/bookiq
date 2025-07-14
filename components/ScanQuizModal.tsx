@@ -3,22 +3,23 @@ import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Dimensions,
-    Image,
-    Modal,
-    Platform,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  Image,
+  Modal,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { useThemeColor } from '../hooks/useThemeColor';
 import { generateQuizFromNotes, processImage } from '../services/geminiServices';
-import { addHistory, addQuiz, spendCredits } from '../services/historyStorage';
+import { addHistory, addQuiz } from '../services/historyStorage';
+import subscriptionService from '../services/subscriptionService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -129,11 +130,11 @@ export default function ScanQuizModal({
 
   const processScannedImage = async (uri: string) => {
     try {
-      const hasEnoughCredits = await spendCredits(1);
-      if (!hasEnoughCredits) {
+      const creditResult = await subscriptionService.spendCredits(1);
+      if (!creditResult.success) {
         Alert.alert(
           "Out of Credits",
-          "You need at least 1 credit to scan an image.",
+          creditResult.error || "You need at least 1 credit to scan an image.",
           [
             { text: "Cancel", style: "cancel" },
             { text: "Get Credits", onPress: () => router.push('/paywall') }
@@ -161,11 +162,11 @@ export default function ScanQuizModal({
     try {
       setQuizState(prev => ({ ...prev, isGenerating: true }));
 
-      const hasEnoughCredits = await spendCredits(2);
-      if (!hasEnoughCredits) {
+      const creditResult = await subscriptionService.spendCredits(2);
+      if (!creditResult.success) {
         Alert.alert(
           "Out of Credits",
-          "You need at least 2 credits to generate a quiz.",
+          creditResult.error || "You need at least 2 credits to generate a quiz.",
           [
             { text: "Cancel", style: "cancel" },
             { text: "Get Credits", onPress: () => router.push('/paywall') }

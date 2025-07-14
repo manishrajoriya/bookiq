@@ -2,24 +2,24 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Dimensions,
-  Image,
-  Modal,
-  Platform,
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    Dimensions,
+    Image,
+    Modal,
+    Platform,
+    SafeAreaView,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { useThemeColor } from '../hooks/useThemeColor';
 import { processImage } from '../services/geminiServices';
-import { spendCredits } from '../services/historyStorage';
+import subscriptionService from '../services/subscriptionService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -109,9 +109,9 @@ export default function AppendScanModal({
     const asset = result.assets[0];
     setImageUri(asset.uri);
     try {
-      const hasEnoughCredits = await spendCredits(1);
-      if (!hasEnoughCredits) {
-        Alert.alert('Insufficient Credits', 'Please purchase more credits to continue scanning.');
+      const creditResult = await subscriptionService.spendCredits(1);
+      if (!creditResult.success) {
+        Alert.alert('Insufficient Credits', creditResult.error || 'Please purchase more credits to continue scanning.');
         return;
       }
       const text = await processImage(asset.uri);

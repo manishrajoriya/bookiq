@@ -1,27 +1,28 @@
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Dimensions,
-    FlatList,
-    Image,
-    Modal,
-    Platform,
-    SafeAreaView,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  Animated,
+  Dimensions,
+  FlatList,
+  Image,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
+import AIAnswerModal from '../components/AIAnswerModal';
+import ImageScanModal from '../components/ImageScanModal';
 import { useThemeColor } from '../hooks/useThemeColor';
 import { getAnswerFromGemini, processImage } from '../services/geminiServices';
-import { addHistory, getAllHistory, spendCredits, updateHistoryAnswer } from '../services/historyStorage';
-
+import { addHistory, getAllHistory, updateHistoryAnswer } from '../services/historyStorage';
+import subscriptionService from '../services/subscriptionService';
 const { width, height } = Dimensions.get('window');
 
 const getColors = (isDark: boolean) => ({
@@ -53,16 +54,17 @@ const AIScan = () => {
   const router = useRouter();
   const [scanHistory, setScanHistory] = useState<ScanHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [pickerModalVisible, setPickerModalVisible] = useState(false);
-  const [imageUri, setImageUri] = useState<string | null>(null);
-  const [extractedText, setExtractedText] = useState<string | null>(null);
-  const [aiAnswer, setAiAnswer] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [loadingMessage, setLoadingMessage] = useState('');
+  const [scanModalVisible, setScanModalVisible] = useState(false);
   const [pendingHistoryId, setPendingHistoryId] = useState<number | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  // AI Answer modal state
+  const [aiAnswerModalVisible, setAiAnswerModalVisible] = useState(false);
+  const [currentQuestion, setCurrentQuestion] = useState<string>('');
+  const [currentAnswer, setCurrentAnswer] = useState<string>('');
+
+  // Animation refs
+  const scrollY = useRef(new Animated.Value(0)).current;
 
   // Theme
   const backgroundColor = useThemeColor({}, 'background');
@@ -88,82 +90,26 @@ const AIScan = () => {
     loadScanHistory();
   }, [loadScanHistory]);
 
-  // Image picker logic
-  const handleScan = async () => {
-    setPickerModalVisible(false);
-    const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-    if (permissionResult.granted === false) {
-      Alert.alert('Camera permission is required to scan images!');
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      quality: 1,
-    });
-    if (!result.canceled && result.assets) {
-      setImageUri(result.assets[0].uri);
-      setModalVisible(true);
-      await processSelectedImage(result.assets[0].uri);
-    }
-  };
-
-  const handleGallery = async () => {
-    setPickerModalVisible(false);
-    const result = await ImagePicker.launchImageLibraryAsync({
-      allowsEditing: true,
-      quality: 1,
-    });
-    if (!result.canceled && result.assets) {
-      setImageUri(result.assets[0].uri);
-      setModalVisible(true);
-      await processSelectedImage(result.assets[0].uri);
-    }
-  };
-
-  const processSelectedImage = async (uri: string) => {
-    setIsLoading(true);
-    setError(null);
-    setAiAnswer(null);
-    setExtractedText(null);
+  const processSelectedImage = async (uri: string): Promise<string> => {
     setPendingHistoryId(null);
     try {
-      setLoadingMessage('Scanning image...');
-      const hasEnoughCredits = await spendCredits(1);
-      if (!hasEnoughCredits) {
-        Alert.alert(
-          'Out of Credits',
-          'You need at least 1 credit to scan an image.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Get Credits', onPress: () => router.push('/paywall') },
-          ]
-        );
-        setIsLoading(false);
-        return;
-      }
       const text = await processImage(uri);
-      setExtractedText(text);
       // Save to history
       const newHistoryId = await addHistory(uri, 'ai-scan', text, '');
       setPendingHistoryId(newHistoryId);
+      return text;
     } catch (e: any) {
-      setError(e.message || 'Something went wrong. Please try again.');
+      const errorMessage = e.message || 'Something went wrong. Please try again.';
+      Alert.alert('Error', errorMessage);
+      throw new Error(errorMessage);
     } finally {
-      setIsLoading(false);
-      setLoadingMessage('');
+      setPendingHistoryId(null);
     }
   };
 
-  const getAIAnswer = async () => {
-    if (!extractedText || !imageUri || !pendingHistoryId) {
-      setError('Cannot get answer. Missing text, image, or history context.');
-      return;
-    }
-    setIsLoading(true);
-    setError(null);
+  const handleImageProcessed = async (extractedText: string) => {
     try {
-      setLoadingMessage('Generating answer... (1 credit)');
-      const hasEnoughCredits = await spendCredits(1);
+      const hasEnoughCredits = await subscriptionService.spendCredits(1);
       if (!hasEnoughCredits) {
         Alert.alert(
           'Out of Credits',
@@ -173,29 +119,29 @@ const AIScan = () => {
             { text: 'Get Credits', onPress: () => router.push('/paywall') },
           ]
         );
-        setIsLoading(false);
         return;
       }
       const answer = await getAnswerFromGemini(extractedText, 'ai-scan');
-      setAiAnswer(answer);
-      await updateHistoryAnswer(pendingHistoryId, answer);
+      if (pendingHistoryId) {
+        await updateHistoryAnswer(pendingHistoryId, answer);
+      }
+      
+      // Show AI Answer Modal
+      setCurrentQuestion(extractedText);
+      setCurrentAnswer(answer);
+      setAiAnswerModalVisible(true);
+      
       // Refresh history after answer
       loadScanHistory();
     } catch (e: any) {
-      setError(e.message || 'Something went wrong. Please try again.');
+      Alert.alert('Error', e.message || 'Something went wrong. Please try again.');
     } finally {
-      setIsLoading(false);
-      setLoadingMessage('');
+      setPendingHistoryId(null);
     }
   };
 
   const closeModal = () => {
-    setModalVisible(false);
-    setImageUri(null);
-    setError(null);
-    setAiAnswer(null);
-    setExtractedText(null);
-    setPendingHistoryId(null);
+    setScanModalVisible(false);
   };
 
   // Card expand/collapse
@@ -221,17 +167,27 @@ const AIScan = () => {
       <StatusBar barStyle={backgroundColor === '#fff' ? 'dark-content' : 'light-content'} backgroundColor={backgroundColor} />
       {/* Header */}
       <View style={[styles.header, { backgroundColor, borderBottomColor: borderColor }]}> 
-        <View style={styles.headerText}>
-          <Text style={[styles.headerTitle, { color: textColor }]}>AI Scan</Text>
-          <Text style={[styles.headerSubtitle, { color: iconColor }]}>Scan documents and get instant AI answers</Text>
-        </View>
-        <View style={styles.headerButtons}>
-          <TouchableOpacity 
-            style={[styles.headerButton, { backgroundColor: cardColor }]} 
-            onPress={() => setPickerModalVisible(true)}
-          >
-            <Ionicons name="scan" size={24} color={iconColor} />
-          </TouchableOpacity>
+        <View style={styles.headerContent}>
+          <View style={styles.headerText}>
+            <Text style={[styles.headerTitle, { color: textColor }]}>AI Scan</Text>
+            <Text style={[styles.headerSubtitle, { color: iconColor }]}>
+              {scanHistory.length} {scanHistory.length === 1 ? 'scan' : 'scans'}
+            </Text>
+          </View>
+          <View style={styles.headerButtons}>
+            <TouchableOpacity 
+              style={[styles.headerButton, { backgroundColor: cardColor }]} 
+              onPress={() => setScanModalVisible(true)}
+            >
+              <Ionicons name="add-outline" size={24} color="#667eea" />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.headerButton, { backgroundColor: cardColor }]} 
+              onPress={() => setScanModalVisible(true)}
+            >
+              <Ionicons name="scan-outline" size={24} color="#667eea" />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
@@ -246,6 +202,11 @@ const AIScan = () => {
           data={scanHistory}
           keyExtractor={item => `scan-${item.id}`}
           contentContainerStyle={styles.listContent}
+          onScroll={Animated.event(
+            [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+            { useNativeDriver: false }
+          )}
+          scrollEventThrottle={16}
           renderItem={({ item }) => (
             <View style={[styles.scanCard, { backgroundColor: cardColor, borderColor }]}> 
               <TouchableOpacity onPress={() => handleToggleExpand(item.id)} activeOpacity={0.95}>
@@ -302,106 +263,62 @@ const AIScan = () => {
         />
       )}
 
-      {/* Floating Action Button */}
-      <View style={styles.fabContainer}>
+      {/* Floating Action Button - Only shown when scrolled */}
+      <Animated.View style={[
+        styles.fabContainer,
+        {
+          opacity: scrollY.interpolate({
+            inputRange: [0, 50],
+            outputRange: [0, 1],
+            extrapolate: 'clamp'
+          }),
+          transform: [{
+            translateY: scrollY.interpolate({
+              inputRange: [0, 50],
+              outputRange: [100, 0],
+              extrapolate: 'clamp'
+            })
+          }]
+        }
+      ]}>
         <TouchableOpacity 
-          style={[styles.fab, { backgroundColor: iconColor }]} 
-          onPress={() => setPickerModalVisible(true)}
+          style={[styles.fab, { backgroundColor: '#667eea' }]} 
+          onPress={() => setScanModalVisible(true)}
+          activeOpacity={0.9}
         >
-          <Ionicons name="scan" size={24} color={backgroundColor} />
+          <Ionicons name="scan-outline" size={24} color="#fff" />
         </TouchableOpacity>
-      </View>
-
-      {/* Picker Modal for image source selection */}
-      <Modal
-        transparent
-        animationType="fade"
-        visible={pickerModalVisible}
-        onRequestClose={() => setPickerModalVisible(false)}
-      >
-        <TouchableOpacity 
-          style={styles.pickerModalOverlay}
-          activeOpacity={1}
-          onPress={() => setPickerModalVisible(false)}
-        >
-          <View style={styles.pickerModalContainer}>
-            <TouchableOpacity 
-              style={styles.pickerOption} 
-              onPress={handleScan}
-            >
-              <Ionicons name="camera-outline" size={24} color="#6366f1" />
-              <Text style={styles.pickerOptionText}>Take Photo</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.pickerOption} 
-              onPress={handleGallery}
-            >
-              <Ionicons name="image-outline" size={24} color="#6366f1" />
-              <Text style={styles.pickerOptionText}>Choose from Gallery</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.pickerCancel} 
-              onPress={() => setPickerModalVisible(false)}
-            >
-              <Text style={styles.pickerCancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
+      </Animated.View>
 
       {/* Scan Modal */}
-      <Modal
-        visible={modalVisible}
-        animationType="slide"
-        transparent={false}
-        onRequestClose={closeModal}
-      >
-        <SafeAreaView style={[styles.modalContainer, { backgroundColor }]}> 
-          <View style={styles.modalHeader}>
-            <Text style={[styles.modalTitle, { color: textColor }]}>New AI Scan</Text>
-            <TouchableOpacity onPress={closeModal}>
-              <Ionicons name="close" size={24} color={iconColor} />
-            </TouchableOpacity>
-          </View>
-          <View style={styles.modalContent}>
-            {imageUri && (
-              <Image source={{ uri: imageUri }} style={styles.modalImage} resizeMode="contain" />
-            )}
-            {isLoading && (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#667eea" />
-                <Text style={styles.loadingText}>{loadingMessage}</Text>
-              </View>
-            )}
-            {error && !isLoading && (
-              <View style={styles.errorContainer}>
-                <Ionicons name="alert-circle" size={24} color="#ff6b6b" />
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            )}
-            {!isLoading && !error && extractedText && !aiAnswer && (
-              <View style={{ flex: 1 }}>
-                <Text style={styles.sectionTitle}>Extracted Text</Text>
-                <ScrollView style={styles.extractedTextView}>
-                  <Text style={styles.extractedTextContent}>{extractedText}</Text>
-                </ScrollView>
-                <TouchableOpacity style={styles.getAnswerButton} onPress={getAIAnswer}>
-                  <Ionicons name="sparkles-outline" size={20} color="white" style={{ marginRight: 8}}/>
-                  <Text style={styles.getAnswerButtonText}>Get AI Answer (1 Credit)</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-            {!isLoading && aiAnswer && (
-              <View style={{ flex: 1 }}>
-                <Text style={styles.sectionTitle}>AI Solution</Text>
-                <ScrollView style={styles.responseContainer} showsVerticalScrollIndicator={false}>
-                  <Text style={styles.responseText}>{aiAnswer}</Text>
-                </ScrollView>
-              </View>
-            )}
-          </View>
-        </SafeAreaView>
-      </Modal>
+      <ImageScanModal
+        visible={scanModalVisible}
+        onClose={closeModal}
+        onImageProcessed={handleImageProcessed}
+        title="AI Scan"
+        subtitle="Take a photo or choose from gallery to extract text for AI analysis"
+        actionButtonText="Get AI Answer (1 Credit)"
+        actionButtonIcon="sparkles-outline"
+        accentColor="#667eea"
+        onProcessImage={processSelectedImage}
+        showExtractedText={true}
+        showActionButton={true}
+      />
+
+      {/* AI Answer Modal */}
+      <AIAnswerModal
+        visible={aiAnswerModalVisible}
+        onClose={() => setAiAnswerModalVisible(false)}
+        onViewHistory={() => {
+          setAiAnswerModalVisible(false);
+          router.push('/HistoryList' as any);
+        }}
+        title="AI Answer"
+        question={currentQuestion}
+        answer={currentAnswer}
+        feature="ai-scan"
+        accentColor="#667eea"
+      />
     </SafeAreaView>
   );
 };
@@ -419,29 +336,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  headerContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   headerText: {
     flex: 1,
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  headerButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#eef2ff',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: '700',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   headerSubtitle: {
     fontSize: 16,
     fontWeight: '500',
-  },
-  headerButtons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  headerButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   loadingContainer: {
     flex: 1,
@@ -484,13 +406,14 @@ const styles = StyleSheet.create({
   },
   fabContainer: {
     position: 'absolute',
-    bottom: 20,
-    right: 20,
+    right: 24,
+    bottom: 24,
   },
   fab: {
-    borderRadius: 50,
+    backgroundColor: '#667eea',
     width: 56,
     height: 56,
+    borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
@@ -499,96 +422,10 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 6,
   },
-  modalContainer: {
-    flex: 1,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 20,
-    borderBottomWidth: 1,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  modalContent: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalImage: {
-    width: '100%',
-    height: 200,
-    borderRadius: 12,
-    marginBottom: 20,
-    backgroundColor: '#f0f0f0',
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 10,
-    color: '#333',
-  },
-  extractedTextView: {
-    width: '100%',
-    padding: 15,
-    backgroundColor: '#f9f9f9',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    marginBottom: 15,
-  },
-  extractedTextContent: {
-    fontSize: 16,
-    lineHeight: 24,
-    color: '#555',
-  },
-  getAnswerButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#667eea',
-    paddingVertical: 12,
-    paddingHorizontal: 25,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#667eea',
-  },
-  getAnswerButtonText: {
-    color: 'white',
+  pickerCancelText: {
+    color: '#667eea',
     fontSize: 16,
     fontWeight: '600',
-  },
-  responseContainer: {
-    width: '100%',
-    padding: 15,
-    backgroundColor: '#f9f9f9',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    marginBottom: 15,
-  },
-  responseText: {
-    fontSize: 16,
-    lineHeight: 24,
-    color: '#333',
-  },
-  errorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff3cd',
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: '#ffeeba',
-  },
-  errorText: {
-    color: '#856404',
-    fontSize: 14,
-    marginLeft: 10,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -661,47 +498,6 @@ const styles = StyleSheet.create({
   expandedText: {
     fontSize: 14,
     lineHeight: 20,
-  },
-  pickerModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  pickerModalContainer: {
-    backgroundColor: 'white',
-    borderRadius: 15,
-    padding: 20,
-    width: '80%',
-    alignItems: 'center',
-  },
-  pickerOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 15,
-    paddingHorizontal: 20,
-    borderRadius: 10,
-    marginBottom: 10,
-    width: '100%',
-    backgroundColor: '#f0f7ff',
-  },
-  pickerOptionText: {
-    marginLeft: 15,
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#6366f1',
-  },
-  pickerCancel: {
-    marginTop: 15,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 10,
-    backgroundColor: '#f0f0f0',
-  },
-  pickerCancelText: {
-    color: '#667eea',
-    fontSize: 16,
-    fontWeight: '600',
   },
 });
 

@@ -1,7 +1,16 @@
 import { Platform } from 'react-native';
 import Purchases, { CustomerInfo, PurchasesOffering, PurchasesPackage } from 'react-native-purchases';
-import { addExpiringCredits, getCredits, spendCredits } from './historyStorage';
-import { addExpiringCreditsOnline, getCreditsOnline, spendCreditsOnline } from './onlineStorage';
+import {
+    addExpiringCreditsOnline,
+    getCreditsOnline,
+    getRestorationStatsOnline,
+    isPurchaseProcessedOnline,
+    isTransactionRestoredOnline,
+    markPurchaseAsProcessedOnline,
+    spendCreditsOnline,
+    trackCreditRestorationOnline,
+    trackPurchaseOnline
+} from './onlineStorage';
 
 // Credit mapping for different subscription plans
 const PLAN_CREDITS: Record<string, number> = {
@@ -78,6 +87,25 @@ class SubscriptionService {
       const productId = pack.product.identifier.toLowerCase();
       console.log('SubscriptionService: Product ID:', productId);
       
+      // Get transaction ID from the purchase
+      const transactionId = customerInfo.nonSubscriptionTransactions?.[0]?.transactionIdentifier || 
+                           `purchase_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      // Track the purchase
+      try {
+        await trackPurchaseOnline(
+          productId,
+          new Date().toISOString(),
+          transactionId,
+          pack.product.price,
+          pack.product.currencyCode || 'INR',
+          'completed'
+        );
+      } catch (trackError) {
+        console.error('SubscriptionService: Failed to track purchase:', trackError);
+        // Don't fail the purchase if tracking fails
+      }
+      
       // Get credits for this plan
       const creditsToAdd = PLAN_CREDITS[productId] || 0;
       const durationDays = PLAN_DURATION[productId] || 30;
@@ -86,25 +114,46 @@ class SubscriptionService {
       
       if (creditsToAdd > 0) {
         try {
+          // Check if this transaction has already been processed
+          const alreadyProcessed = await isPurchaseProcessedOnline(transactionId);
+          if (alreadyProcessed) {
+            console.log('SubscriptionService: Transaction already processed, skipping credit addition');
+            return {
+              success: true,
+              credits: 0,
+              error: 'Credits already added for this purchase'
+            };
+          }
+          
           // Calculate expiration date
           const expirationDate = new Date();
           expirationDate.setDate(expirationDate.getDate() + durationDays);
           
           console.log('SubscriptionService: Adding credits with expiration:', expirationDate.toISOString());
           
-          // Add credits to local storage first (always works)
-          await addExpiringCredits(creditsToAdd, expirationDate.toISOString());
+          // Add credits to online storage only
+          await addExpiringCreditsOnline(creditsToAdd, expirationDate.toISOString());
+          console.log('SubscriptionService: Credits added to online storage successfully');
           
-          // Try to add to online storage (optional - only if user is authenticated)
+          // Mark purchase as processed
           try {
-            await addExpiringCreditsOnline(creditsToAdd, expirationDate.toISOString());
-            console.log('SubscriptionService: Credits added to online storage successfully');
-          } catch (onlineError: any) {
-            if (onlineError.message === 'Not authenticated') {
-              console.log('SubscriptionService: User not authenticated, skipping online storage');
-            } else {
-              console.error('SubscriptionService: Failed to add credits to online storage:', onlineError);
-            }
+            await markPurchaseAsProcessedOnline(transactionId);
+          } catch (markError) {
+            console.error('SubscriptionService: Failed to mark purchase as processed:', markError);
+          }
+          
+          // Track the credit restoration
+          try {
+            await trackCreditRestorationOnline(
+              productId,
+              transactionId,
+              creditsToAdd,
+              creditsToAdd,
+              'initial_purchase',
+              'success'
+            );
+          } catch (restoreTrackError) {
+            console.error('SubscriptionService: Failed to track credit restoration:', restoreTrackError);
           }
           
           console.log(`SubscriptionService: Successfully added ${creditsToAdd} credits expiring on ${expirationDate.toISOString()}`);
@@ -115,6 +164,20 @@ class SubscriptionService {
           };
         } catch (creditError: any) {
           console.error('SubscriptionService: Failed to add credits:', creditError);
+          
+          // Track failed restoration
+          try {
+            await trackCreditRestorationOnline(
+              productId,
+              transactionId,
+              creditsToAdd,
+              0,
+              'initial_purchase',
+              'failed'
+            );
+          } catch (restoreTrackError) {
+            console.error('SubscriptionService: Failed to track failed restoration:', restoreTrackError);
+          }
           
           // Purchase was successful but credit addition failed
           // This is a partial success - we should still return success but warn about credits
@@ -170,12 +233,9 @@ class SubscriptionService {
     }
   }
 
-  async getCurrentCredits(): Promise<{ local: number; online: number; total: number }> {
+  async getCurrentCredits(): Promise<{ online: number; total: number }> {
     try {
-      // Get local credits (always works)
-      const localCredits = await getCredits();
-      
-      // Try to get online credits (optional - only if user is authenticated)
+      // Get online credits only
       let onlineCredits = 0;
       try {
         onlineCredits = await getCreditsOnline();
@@ -188,13 +248,12 @@ class SubscriptionService {
       }
       
       return {
-        local: localCredits,
         online: onlineCredits,
-        total: localCredits + onlineCredits
+        total: onlineCredits
       };
     } catch (error) {
       console.error('SubscriptionService: Failed to get credits:', error);
-      return { local: 0, online: 0, total: 0 };
+      return { online: 0, total: 0 };
     }
   }
 
@@ -202,27 +261,7 @@ class SubscriptionService {
     try {
       console.log(`SubscriptionService: Attempting to spend ${amount} credits`);
       
-      // Try local credits first
-      const localSuccess = await spendCredits(amount);
-      
-      if (localSuccess) {
-        const remaining = await getCredits();
-        
-        // Try to sync with online storage if user is authenticated
-        try {
-          await spendCreditsOnline(amount);
-        } catch (onlineError: any) {
-          if (onlineError.message === 'Not authenticated') {
-            console.log('SubscriptionService: User not authenticated, skipping online credit sync');
-          } else {
-            console.error('SubscriptionService: Failed to sync credits with online storage:', onlineError);
-          }
-        }
-        
-        return { success: true, remainingCredits: remaining };
-      }
-      
-      // If local credits insufficient, try online credits
+      // Try online credits only
       try {
         const onlineSuccess = await spendCreditsOnline(amount);
         if (onlineSuccess) {
@@ -232,8 +271,10 @@ class SubscriptionService {
       } catch (onlineError: any) {
         if (onlineError.message === 'Not authenticated') {
           console.log('SubscriptionService: User not authenticated, online credits not available');
+          return { success: false, error: 'Please sign in to use credits' };
         } else {
           console.error('SubscriptionService: Failed to spend online credits:', onlineError);
+          return { success: false, error: 'Failed to process credit transaction' };
         }
       }
       
@@ -262,13 +303,251 @@ class SubscriptionService {
     return { restored: 0, errors: 0 };
   }
 
+  /**
+   * Check and verify credits for all purchased products
+   * This is the main function for credit verification
+   */
+  async verifyAndRestoreCredits(): Promise<{ 
+    success: boolean; 
+    restored: number; 
+    errors: number; 
+    message: string;
+    details: Array<{ productId: string; credits: number; status: string }>;
+  }> {
+    try {
+      console.log('SubscriptionService: Starting credit verification...');
+      
+      const customerInfo = await Purchases.getCustomerInfo();
+      const purchasedProducts = customerInfo.allPurchasedProductIdentifiers || [];
+      
+      if (purchasedProducts.length === 0) {
+        return {
+          success: true,
+          restored: 0,
+          errors: 0,
+          message: 'No purchased products found to verify.',
+          details: []
+        };
+      }
+
+      console.log('SubscriptionService: Found purchased products:', purchasedProducts);
+      
+      let totalRestored = 0;
+      let totalErrors = 0;
+      const details: Array<{ productId: string; credits: number; status: string }> = [];
+
+      // Get current credits before verification
+      const currentCredits = await this.getCurrentCredits();
+      console.log('SubscriptionService: Current credits before verification:', currentCredits.total);
+
+      for (const productId of purchasedProducts) {
+        try {
+          const result = await this.verifySingleProductCredits(productId, customerInfo);
+          if (result.success) {
+            totalRestored += result.credits;
+            details.push({
+              productId,
+              credits: result.credits,
+              status: 'restored'
+            });
+          } else {
+            totalErrors++;
+            details.push({
+              productId,
+              credits: 0,
+              status: result.error || 'failed'
+            });
+          }
+        } catch (error) {
+          console.error(`SubscriptionService: Error verifying product ${productId}:`, error);
+          totalErrors++;
+          details.push({
+            productId,
+            credits: 0,
+            status: 'error'
+          });
+        }
+      }
+
+      // Get credits after verification
+      const finalCredits = await this.getCurrentCredits();
+      const actualRestored = finalCredits.total - currentCredits.total;
+
+      console.log(`SubscriptionService: Credit verification complete. Restored: ${actualRestored}, Errors: ${totalErrors}`);
+
+      return {
+        success: totalErrors === 0,
+        restored: actualRestored,
+        errors: totalErrors,
+        message: totalErrors === 0 
+          ? `Successfully verified ${purchasedProducts.length} purchase(s). ${actualRestored > 0 ? `${actualRestored} credits restored.` : 'All credits already present.'}`
+          : `Verified ${purchasedProducts.length} purchase(s) with ${totalErrors} error(s). ${actualRestored > 0 ? `${actualRestored} credits restored.` : ''}`,
+        details
+      };
+
+    } catch (error) {
+      console.error('SubscriptionService: Credit verification failed:', error);
+      return {
+        success: false,
+        restored: 0,
+        errors: 1,
+        message: 'Failed to verify credits. Please try again or contact support.',
+        details: []
+      };
+    }
+  }
+
+  /**
+   * Verify credits for a single purchased product
+   */
+  private async verifySingleProductCredits(productId: string, customerInfo: CustomerInfo): Promise<{ 
+    success: boolean; 
+    credits: number; 
+    error?: string;
+  }> {
+    try {
+      const productIdLower = productId.toLowerCase();
+      const expectedCredits = PLAN_CREDITS[productIdLower] || 0;
+      const durationDays = PLAN_DURATION[productIdLower] || 30;
+
+      if (expectedCredits === 0) {
+        return { success: true, credits: 0, error: 'No credits expected for this product' };
+      }
+
+      // Check if this product was purchased recently (within last 24 hours)
+      const purchaseDate = customerInfo.allPurchaseDates?.[productId];
+      if (!purchaseDate) {
+        return { success: false, credits: 0, error: 'Purchase date not found' };
+      }
+
+      const purchaseTime = new Date(purchaseDate).getTime();
+      const now = Date.now();
+      const hoursSincePurchase = (now - purchaseTime) / (1000 * 60 * 60);
+
+      // Only process purchases from the last 24 hours to avoid duplicate credits
+      if (hoursSincePurchase > 24) {
+        return { success: true, credits: 0, error: 'Purchase too old for verification' };
+      }
+
+      // Get transaction ID for this purchase
+      const transactionId = customerInfo.nonSubscriptionTransactions?.find(t => t.productIdentifier === productId)?.transactionIdentifier ||
+                           `purchase_${purchaseTime}_${productId}`;
+
+      // Check if this transaction has already been restored
+      const alreadyRestored = await isTransactionRestoredOnline(transactionId);
+      if (alreadyRestored) {
+        console.log(`SubscriptionService: Transaction ${transactionId} already restored, skipping`);
+        return { success: true, credits: 0, error: 'Credits already restored for this transaction' };
+      }
+
+      // Check if credits already exist for this purchase
+      const currentCredits = await this.getCurrentCredits();
+      
+      // For now, we'll add credits if they don't exist
+      // In a more sophisticated system, you might want to track which purchases have been processed
+      try {
+        const expirationDate = new Date();
+        expirationDate.setDate(expirationDate.getDate() + durationDays);
+        
+        await addExpiringCreditsOnline(expectedCredits, expirationDate.toISOString());
+        
+        // Track the successful restoration
+        try {
+          await trackCreditRestorationOnline(
+            productId,
+            transactionId,
+            expectedCredits,
+            expectedCredits,
+            'verification',
+            'success'
+          );
+        } catch (trackError) {
+          console.error('SubscriptionService: Failed to track restoration:', trackError);
+        }
+        
+        console.log(`SubscriptionService: Verified and added ${expectedCredits} credits for product ${productId}`);
+        
+        return { success: true, credits: expectedCredits };
+      } catch (creditError: any) {
+        console.error(`SubscriptionService: Failed to add credits for ${productId}:`, creditError);
+        
+        // Track the failed restoration
+        try {
+          await trackCreditRestorationOnline(
+            productId,
+            transactionId,
+            expectedCredits,
+            0,
+            'verification',
+            'failed'
+          );
+        } catch (trackError) {
+          console.error('SubscriptionService: Failed to track failed restoration:', trackError);
+        }
+        
+        return { success: false, credits: 0, error: 'Failed to add credits' };
+      }
+
+    } catch (error) {
+      console.error(`SubscriptionService: Error in verifySingleProductCredits for ${productId}:`, error);
+      return { success: false, credits: 0, error: 'Verification failed' };
+    }
+  }
+
+  /**
+   * Check purchase status and return detailed information
+   */
+  async checkPurchaseStatus(): Promise<{
+    success: boolean;
+    message: string;
+    purchases: Array<{
+      productId: string;
+      purchaseDate: string;
+      status: string;
+      expectedCredits: number;
+    }>;
+    totalCredits: number;
+  }> {
+    try {
+      const customerInfo = await Purchases.getCustomerInfo();
+      const purchasedProducts = customerInfo.allPurchasedProductIdentifiers || [];
+      const currentCredits = await this.getCurrentCredits();
+
+      const purchases = purchasedProducts.map(productId => {
+        const purchaseDate = customerInfo.allPurchaseDates?.[productId] || 'Unknown';
+        const expectedCredits = PLAN_CREDITS[productId.toLowerCase()] || 0;
+        
+        return {
+          productId,
+          purchaseDate,
+          status: 'purchased',
+          expectedCredits
+        };
+      });
+
+      return {
+        success: true,
+        message: `Found ${purchasedProducts.length} purchase(s) with ${currentCredits.total} total credits`,
+        purchases,
+        totalCredits: currentCredits.total
+      };
+
+    } catch (error) {
+      console.error('SubscriptionService: Failed to check purchase status:', error);
+      return {
+        success: false,
+        message: 'Failed to check purchase status',
+        purchases: [],
+        totalCredits: 0
+      };
+    }
+  }
+
   private async syncCreditsWithSubscription(customerInfo: CustomerInfo) {
     // For one-time purchases, no subscription syncing is needed
     // Credits are managed independently of subscription status
     console.log('SubscriptionService: No subscription syncing needed for one-time purchases');
   }
-
-
 
   async checkSubscriptionStatus(): Promise<{ isSubscribed: boolean; entitlements: string[] }> {
     try {
@@ -312,6 +591,41 @@ class SubscriptionService {
     } catch (error) {
       console.error('SubscriptionService: Failed to get subscription info:', error);
       return { isSubscribed: false, entitlements: [] };
+    }
+  }
+
+  /**
+   * Get restoration statistics for the current user
+   */
+  async getRestorationStatistics(): Promise<{
+    success: boolean;
+    stats: {
+      totalRestorations: number;
+      successfulRestorations: number;
+      totalCreditsRestored: number;
+      lastRestorationDate?: string;
+    };
+    message: string;
+  }> {
+    try {
+      const stats = await getRestorationStatsOnline();
+      
+      return {
+        success: true,
+        stats,
+        message: `You have restored ${stats.totalCreditsRestored} credits in ${stats.successfulRestorations} successful attempts.`
+      };
+    } catch (error) {
+      console.error('SubscriptionService: Failed to get restoration statistics:', error);
+      return {
+        success: false,
+        stats: {
+          totalRestorations: 0,
+          successfulRestorations: 0,
+          totalCreditsRestored: 0
+        },
+        message: 'Unable to load restoration statistics.'
+      };
     }
   }
 }

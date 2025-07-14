@@ -1,31 +1,30 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Animated,
-  Dimensions,
-  Image,
-  Modal,
-  Platform,
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  Vibration,
-  View
+    ActivityIndicator,
+    Alert,
+    Animated,
+    Dimensions,
+    Platform,
+    SafeAreaView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    Vibration,
+    View
 } from 'react-native';
 import FlashCardGenerationModal from '../components/FlashCardGenerationModal';
 import FlashCardViewer from '../components/FlashCardViewer';
+import ImageScanModal from '../components/ImageScanModal';
 import ManualFlashCardModal from '../components/ManualFlashCardModal';
+import NoteReaderModal from '../components/NoteReaderModal';
 import { useThemeContext } from '../providers/ThemeProvider';
 import { processImage } from '../services/geminiServices';
-import { FlashCardSet, getAllFlashCardSets, spendCredits } from '../services/historyStorage';
+import { FlashCardSet, getAllFlashCardSets } from '../services/historyStorage';
+import subscriptionService from '../services/subscriptionService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -81,9 +80,6 @@ const FlashCardMaker = () => {
   
   // Scan state for direct generation
   const [scanModalVisible, setScanModalVisible] = useState(false);
-  const [imageUri, setImageUri] = useState<string | null>(null);
-  const [extractedText, setExtractedText] = useState<string>('');
-  const [isScanning, setIsScanning] = useState(false);
   
   // Manual creation state
   const [manualModalVisible, setManualModalVisible] = useState(false);
@@ -147,85 +143,16 @@ const FlashCardMaker = () => {
   // Scan handlers for direct quiz generation
   const openScanModal = () => {
     setScanModalVisible(true);
-    setImageUri(null);
-    setExtractedText('');
-    clearError();
   };
 
   const closeScanModal = () => {
-    if (isScanning) {
-      Alert.alert(
-        'Scan in Progress',
-        'Please wait for the scan to complete.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
     setScanModalVisible(false);
-    setImageUri(null);
-    setExtractedText('');
-    clearError();
   };
 
-  const handleCameraScan = async () => {
+  const processScannedImage = async (uri: string): Promise<string> => {
     try {
-      clearError();
-      setIsScanning(true);
-
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Camera Permission Required', 'Please grant camera permission to scan documents.');
-        return;
-      }
-
-      const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: true,
-        quality: 0.9,
-        aspect: [4, 3],
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        setImageUri(asset.uri);
-        await processScannedImage(asset.uri);
-      }
-    } catch (error) {
-      console.error('Camera error:', error);
-      handleError('scanning', 'Failed to capture image. Please try again.', true);
-    } finally {
-      setIsScanning(false);
-    }
-  };
-
-  const handleGalleryScan = async () => {
-    try {
-      clearError();
-      setIsScanning(true);
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        allowsEditing: true,
-        quality: 0.9,
-        aspect: [4, 3],
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        setImageUri(asset.uri);
-        await processScannedImage(asset.uri);
-      }
-    } catch (error) {
-      console.error('Gallery error:', error);
-      handleError('scanning', 'Failed to select image from gallery. Please try again.', true);
-    } finally {
-      setIsScanning(false);
-    }
-  };
-
-  const processScannedImage = async (uri: string) => {
-    try {
-      const hasEnoughCredits = await spendCredits(1);
+      const creditResult = await subscriptionService.spendCredits(1);
+      const hasEnoughCredits = creditResult.success;
       if (!hasEnoughCredits) {
         Alert.alert(
           "Out of Credits",
@@ -235,21 +162,32 @@ const FlashCardMaker = () => {
             { text: "Get Credits", onPress: () => router.push('/paywall') }
           ]
         );
-        return;
+        throw new Error('Insufficient credits');
       }
 
       const text = await processImage(uri);
       if (!text || text.trim().length === 0) {
-        handleError('scanning', 'No text could be detected in the image. Please try with a clearer image.', true);
-        return;
+        throw new Error('No text could be detected in the image. Please try with a clearer image.');
       }
 
-      setExtractedText(text.trim());
-      clearError();
+      return text.trim();
     } catch (error) {
       console.error('Image processing error:', error);
-      handleError('scanning', 'Failed to process the image. Please try again with a clearer image.', true);
+      throw new Error('Failed to process the image. Please try again with a clearer image.');
     }
+  };
+
+  const handleImageProcessed = (extractedText: string) => {
+    closeScanModal();
+    // Open flash card generation modal with scanned content
+    setSelectedSet({
+      id: 0,
+      title: 'Scanned Document',
+      content: extractedText,
+      card_type: 'term-definition',
+      createdAt: new Date().toISOString()
+    });
+    setGenerationModalVisible(true);
   };
 
   const openGenerationModal = (set: FlashCardSet) => {
@@ -287,6 +225,10 @@ const FlashCardMaker = () => {
     setPreviewModalVisible(true);
   };
 
+  const openEditNote = (set: FlashCardSet) => {
+    router.push(`/note/${set.id}` as any);
+  };
+
   const openFlashCardViewer = (set: FlashCardSet) => {
     setSelectedSet(set);
     setViewerModalVisible(true);
@@ -309,9 +251,7 @@ const FlashCardMaker = () => {
   const retryLastAction = () => {
     switch (error.type) {
       case 'scanning':
-        if (imageUri) {
-          processScannedImage(imageUri);
-        }
+        // Retry is handled by the ImageScanModal component
         break;
       case 'network':
         loadFlashCardSets();
@@ -322,57 +262,73 @@ const FlashCardMaker = () => {
   };
 
   const renderSetItem = ({ item }: { item: FlashCardSet }) => (
-    <View style={[styles.noteCardContainer, { backgroundColor: COLORS.cardColor, borderColor: COLORS.borderColor }]}>
+    <View style={[styles.noteCard, { backgroundColor: COLORS.cardColor, borderColor: COLORS.borderColor }]}>
+      {/* Main Content Area */}
       <TouchableOpacity 
         onPress={() => openPreview(item)}
         activeOpacity={0.8}
-        style={styles.noteCard}
+        style={styles.noteContent}
       >
-        <View style={styles.noteCardContent}>
-          <View style={styles.noteHeader}>
-            <Text style={[styles.noteTitle, { color: COLORS.textColor.primary }]} numberOfLines={1} ellipsizeMode="tail">
+        {/* Header with Title and Date */}
+        <View style={styles.noteHeader}>
+          <View style={styles.noteTitleContainer}>
+            <Text style={[styles.noteTitle, { color: COLORS.textColor.primary }]} numberOfLines={2}>
               {item.title}
             </Text>
-            <View style={styles.noteMetadata}>
-              <Text style={[styles.wordCount, { color: COLORS.accentColor, backgroundColor: COLORS.backgroundColor }]}>{item.card_type.replace('-', ' ')}</Text>
+            <View style={[styles.flashCardBadge, { backgroundColor: COLORS.accentColor }]}>
+              <Ionicons name="albums" size={12} color={COLORS.textColor.white} />
+              <Text style={[styles.badgeText, { color: COLORS.textColor.white }]}>Cards</Text>
             </View>
           </View>
-          
-          <Text 
-            numberOfLines={3} 
-            style={[styles.noteContent, { color: COLORS.textColor.secondary }]}
-            ellipsizeMode="tail"
-          >
-            {item.content}
+          <Text style={[styles.noteDate, { color: COLORS.textColor.light }]}>
+            {item.createdAt}
           </Text>
-          
-          <View style={styles.noteFooter}>
-            <Text style={[styles.noteDate, { color: COLORS.textColor.light }]}>
-              {item.createdAt}
-            </Text>
-            <View style={styles.noteActions}>
-              <TouchableOpacity 
-                style={styles.practiceButton}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  openFlashCardViewer(item);
-                }}
-              >
-                <Ionicons name="play-outline" size={16} color={COLORS.accentColor} />
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.quizButton}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  openGenerationModal(item);
-                }}
-              >
-                <Ionicons name="copy-outline" size={16} color={COLORS.accentColor} />
-              </TouchableOpacity>
+        </View>
+        
+        {/* Content Preview */}
+        <Text 
+          numberOfLines={3} 
+          style={[styles.noteContent, { color: COLORS.textColor.secondary }]}
+        >
+          {item.content}
+        </Text>
+        
+        {/* Stats Footer */}
+        <View style={styles.noteFooter}>
+          <View style={styles.noteStats}>
+            <View style={[styles.statItem, { backgroundColor: COLORS.backgroundColor }]}>
+              <Ionicons name="document-text" size={14} color={COLORS.accentColor} />
+              <Text style={[styles.statText, { color: COLORS.textColor.secondary }]}>
+                {item.card_type.replace('-', ' ')}
+              </Text>
             </View>
           </View>
         </View>
       </TouchableOpacity>
+      
+      {/* Action Buttons */}
+      <View style={styles.noteActions}>
+        <TouchableOpacity 
+          style={[styles.actionButton, { backgroundColor: COLORS.accentColor }]}
+          onPress={() => openFlashCardViewer(item)}
+        >
+          <Ionicons name="play" size={20} color={COLORS.textColor.white} />
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.actionButton, { backgroundColor: COLORS.backgroundColor }]}
+          onPress={() => openEditNote(item)}
+        >
+          <Ionicons name="create-outline" size={20} color={COLORS.accentColor} />
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.actionButton, { backgroundColor: COLORS.backgroundColor }]}
+          onPress={() => openGenerationModal(item)}
+        >
+          <Ionicons name="copy-outline" size={20} color={COLORS.accentColor} />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -480,7 +436,7 @@ const FlashCardMaker = () => {
               <Ionicons name="add-outline" size={24} color={COLORS.accentColor} />
             </TouchableOpacity>
             <TouchableOpacity 
-              style={styles.scanButton}
+              style={styles.manualQuizButton}
               onPress={openScanModal}
             >
               <Ionicons name="scan-outline" size={24} color={COLORS.accentColor} />
@@ -525,6 +481,15 @@ const FlashCardMaker = () => {
         title={selectedSet?.title || ''}
       />
 
+      {/* Note Reader Modal for Preview and Edit */}
+      <NoteReaderModal
+        visible={previewModalVisible}
+        onClose={() => setPreviewModalVisible(false)}
+        note={selectedSet}
+        isScanNote={false}
+        isQuiz={false}
+      />
+
       {/* Flash Card Generation Modal */}
       <FlashCardGenerationModal
         visible={generationModalVisible}
@@ -536,128 +501,20 @@ const FlashCardMaker = () => {
         onFlashCardSaved={handleFlashCardSaved}
       />
 
-      <Modal
+      {/* Image Scan Modal */}
+      <ImageScanModal
         visible={scanModalVisible}
-        animationType="slide"
-        transparent={false}
-        onRequestClose={closeScanModal}
-      >
-        <SafeAreaView style={[styles.modalSafeAreView, { backgroundColor: COLORS.backgroundColor }]}>
-          <View style={[styles.modalContainer, { backgroundColor: COLORS.backgroundColor }]}>
-            <View style={[styles.modalHeader, { borderBottomColor: COLORS.borderColor }]}>
-              <View style={styles.modalTitleContainer}>
-                <Text style={[styles.modalTitle, { color: COLORS.textColor.primary }]}>Scan for Set</Text>
-                <TouchableOpacity 
-                  onPress={closeScanModal}
-                  style={styles.closeButton}
-                >
-                  <Ionicons name="close" size={24} color={COLORS.textColor.secondary} />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <ScrollView 
-              style={styles.modalContent}
-              showsVerticalScrollIndicator={false}
-            >
-              {!imageUri && (
-                <View style={styles.scanSection}>
-                  <Text style={[styles.sectionTitle, { color: COLORS.textColor.primary }]}>Scan Document</Text>
-                  <Text style={[styles.sectionSubtitle, { color: COLORS.textColor.secondary }]}>
-                    Take a photo or choose from gallery to extract text for set generation
-                  </Text>
-                  <View style={styles.scanButtons}>
-                    <TouchableOpacity 
-                      style={[
-                        styles.scanButton,
-                        { backgroundColor: COLORS.cardColor, borderColor: COLORS.borderColor },
-                        isScanning && styles.scanButtonDisabled
-                      ]}
-                      onPress={handleCameraScan}
-                      disabled={isScanning}
-                    >
-                      <View style={[styles.scanButtonIcon, { backgroundColor: COLORS.backgroundColor }]}>
-                        <Ionicons name="camera-outline" size={28} color={COLORS.accentColor} />
-                      </View>
-                      <Text style={[styles.scanButtonText, { color: COLORS.textColor.primary }]}>Camera</Text>
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity 
-                      style={[
-                        styles.scanButton,
-                        { backgroundColor: COLORS.cardColor, borderColor: COLORS.borderColor },
-                        isScanning && styles.scanButtonDisabled
-                      ]}
-                      onPress={handleGalleryScan}
-                      disabled={isScanning}
-                    >
-                      <View style={[styles.scanButtonIcon, { backgroundColor: COLORS.backgroundColor }]}>
-                        <Ionicons name="image-outline" size={28} color={COLORS.accentColor} />
-                      </View>
-                      <Text style={[styles.scanButtonText, { color: COLORS.textColor.primary }]}>Gallery</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-
-              {imageUri && (
-                <View style={styles.imageSection}>
-                  <Text style={[styles.sectionTitle, { color: COLORS.textColor.primary }]}>Document Preview</Text>
-                  <View style={[styles.imageContainer, { backgroundColor: COLORS.backgroundColor }]}>
-                    <Image
-                      source={{ uri: imageUri }}
-                      style={styles.previewImage}
-                      resizeMode="contain"
-                    />
-                    <TouchableOpacity
-                      style={styles.removeImageButton}
-                      onPress={() => {
-                        setImageUri(null);
-                        setExtractedText('');
-                        clearError();
-                      }}
-                    >
-                      <Ionicons name="close" size={16} color={COLORS.textColor.white} />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-
-              {extractedText && (
-                <View style={styles.extractedTextSection}>
-                  <Text style={[styles.sectionTitle, { color: COLORS.textColor.primary }]}>Extracted Text</Text>
-                  <View style={[styles.extractedTextContainer, { backgroundColor: COLORS.cardColor, borderColor: COLORS.borderColor }]}>
-                    <Text style={[styles.extractedTextContent, { color: COLORS.textColor.secondary }]}>{extractedText}</Text>
-                  </View>
-                </View>
-              )}
-            </ScrollView>
-
-            {extractedText && (
-              <View style={[styles.generateButtonSection, { borderTopColor: COLORS.borderColor, backgroundColor: COLORS.backgroundColor }]}>
-                <TouchableOpacity
-                  style={[styles.generateButton, { backgroundColor: COLORS.accentColor }]}
-                  onPress={() => {
-                    closeScanModal();
-                    // Open flash card generation modal with scanned content
-                    setSelectedSet({
-                      id: 0,
-                      title: 'Scanned Document',
-                      content: extractedText,
-                      card_type: 'term-definition',
-                      createdAt: new Date().toISOString()
-                    });
-                    setGenerationModalVisible(true);
-                  }}
-                >
-                  <Ionicons name="sparkles-outline" size={20} color={COLORS.textColor.white} />
-                  <Text style={[styles.generateButtonText, { color: COLORS.textColor.white }]}>Generate Flash Cards</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        </SafeAreaView>
-      </Modal>
+        onClose={closeScanModal}
+        onImageProcessed={handleImageProcessed}
+        title="Scan for Set"
+        subtitle="Take a photo or choose from gallery to extract text for set generation"
+        actionButtonText="Generate Flash Cards"
+        actionButtonIcon="sparkles-outline"
+        accentColor={COLORS.accentColor}
+        onProcessImage={processScannedImage}
+        showExtractedText={true}
+        showActionButton={true}
+      />
 
       {/* Manual Flash Card Modal */}
       <ManualFlashCardModal
@@ -750,25 +607,20 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: 16,
   },
-  noteCardContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 1,
-    borderWidth: 1,
-    borderColor: '#f3f4f6',
-  },
   noteCard: {
-    flex: 1,
+    borderRadius: 16,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
+    overflow: 'hidden',
+    marginBottom: 16,
   },
-  noteCardContent: {
-    padding: 16,
+  noteContent: {
+    padding: 20,
+    paddingBottom: 16,
   },
   noteHeader: {
     flexDirection: 'row',
@@ -795,12 +647,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 8,
   },
-  noteContent: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: '#4b5563',
-    marginBottom: 16,
-  },
+
   noteFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -813,9 +660,17 @@ const styles = StyleSheet.create({
   },
   noteActions: {
     flexDirection: 'row',
-    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
   },
   practiceButton: {
+    padding: 4,
+    marginLeft: 8,
+  },
+  editButton: {
     padding: 4,
     marginLeft: 8,
   },
@@ -859,183 +714,6 @@ const styles = StyleSheet.create({
     padding: 4,
     marginLeft: 8,
   },
-  modalSafeAreView: {
-    flex: 1,
-    backgroundColor: 'white'
-  },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: 'white',
-  },
-  modalHeader: {
-    paddingTop: Platform.OS === 'ios' ? 12 : 28,
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
-  },
-  modalTitleContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  closeButton: {
-    padding: 4,
-  },
-  selectedNoteTitle: {
-    fontSize: 14,
-    color: '#6b7280',
-    fontStyle: 'italic',
-  },
-  modalContent: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
-  settingsSection: {
-    marginVertical: 24,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 16,
-  },
-  settingGroup: {
-    marginBottom: 24,
-  },
-  settingLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 12,
-  },
-  quizTypeButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  quizTypeButton: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-  },
-  quizTypeButtonActive: {
-    backgroundColor: '#f093fb',
-    borderColor: '#f093fb',
-  },
-  quizTypeButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#4b5563',
-  },
-  quizTypeButtonTextActive: {
-    color: 'white',
-  },
-  questionCountButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  questionCountButton: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-  },
-  questionCountButtonActive: {
-    backgroundColor: '#f093fb',
-    borderColor: '#f093fb',
-  },
-  questionCountButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#4b5563',
-  },
-  questionCountButtonTextActive: {
-    color: 'white',
-  },
-  generateButton: {
-    backgroundColor: '#f093fb',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    borderRadius: 12,
-    marginTop: 16,
-  },
-  generateButtonDisabled: {
-    backgroundColor: '#9ca3af',
-  },
-  generateButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  progressContainer: {
-    backgroundColor: '#f9fafb',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 24,
-  },
-  progressHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  progressTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111827',
-    marginLeft: 8,
-  },
-  progressBarContainer: {
-    height: 4,
-    backgroundColor: '#e5e7eb',
-    borderRadius: 2,
-    marginBottom: 8,
-  },
-  progressBar: {
-    height: '100%',
-    backgroundColor: '#f093fb',
-    borderRadius: 2,
-  },
-  progressText: {
-    fontSize: 12,
-    color: '#6b7280',
-    textAlign: 'center',
-  },
-  quizSection: {
-    marginBottom: 24,
-  },
-  quizContent: {
-    backgroundColor: '#f9fafb',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-  },
-  quizText: {
-    fontSize: 14,
-    color: '#374151',
-    lineHeight: 22,
-  },
-  scanButton: {
-    padding: 4,
-  },
   scanEmptyButton: {
     backgroundColor: '#f093fb',
     padding: 12,
@@ -1045,96 +723,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   scanEmptyButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  scanSection: {
-    marginBottom: 24,
-    alignItems: 'center'
-  },
-  sectionSubtitle: {
-    fontSize: 14,
-    color: '#6b7280',
-    textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 32,
-    maxWidth: 300,
-  },
-  scanButtons: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  scanButtonIcon: {
-    marginBottom: 12,
-  },
-  scanButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#4b5563',
-  },
-  scanButtonDisabled: {
-    opacity: 0.5,
-  },
-  imageSection: {
-    marginBottom: 24,
-  },
-  imageContainer: {
-    position: 'relative',
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: '#f3f4f6',
-    minHeight: 180,
-  },
-  previewImage: {
-    width: '100%',
-    height: 240,
-  },
-  removeImageButton: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    borderRadius: 12,
-    padding: 6,
-  },
-  extractedTextSection: {
-    marginBottom: 24,
-  },
-  extractedTextContainer: {
-    backgroundColor: '#f9fafb',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-  },
-  extractedTextContent: {
-    fontSize: 14,
-    color: '#4b5563',
-    lineHeight: 20,
-  },
-  quizSettingsSection: {
-    marginBottom: 24,
-  },
-  generateButtonSection: {
-    padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#f3f4f6',
-    backgroundColor: 'white',
-  },
-  saveButton: {
-    backgroundColor: '#10b981',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    borderRadius: 12,
-  },
-  saveButtonDisabled: {
-    backgroundColor: '#9ca3af',
-  },
-  saveButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: '600',
@@ -1211,6 +799,51 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     marginTop: 24,
     fontStyle: 'italic',
+  },
+  noteTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  flashCardBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginLeft: 12,
+  },
+  badgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  noteStats: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  statItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  statText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  actionButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
 });
 

@@ -1,35 +1,55 @@
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    ActivityIndicator,
     Alert,
     Dimensions,
-    Image,
-    Modal,
     Platform,
     ScrollView,
     StatusBar,
     StyleSheet,
     Text,
-    TextInput,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
-import { useThemeColor } from '../../hooks/useThemeColor';
+import AIAnswerModal from '../../components/AIAnswerModal';
+import ImageScanModal from '../../components/ImageScanModal';
+import { useThemeContext } from '../../providers/ThemeProvider';
 import { getAnswerFromGemini, processImage } from '../../services/geminiServices';
 import {
     addHistory,
     addNote,
-    spendCredits,
     updateHistoryAnswer,
 } from "../../services/historyStorage";
+import subscriptionService from "../../services/subscriptionService";
 
 const { width, height } = Dimensions.get('window');
 
+// Dynamic color scheme based on theme
+const getColors = (isDark: boolean) => ({
+  primary: '#667eea',
+  accentColor: '#667eea',
+  dangerColor: '#ff6b6b',
+  successColor: '#10b981',
+  backgroundColor: isDark ? '#0f0f0f' : '#ffffff',
+  cardColor: isDark ? '#1a1a1a' : '#ffffff',
+  headerBackground: isDark ? '#1a1a1a' : '#ffffff',
+  borderColor: isDark ? '#333333' : '#f0f0f0',
+  iconColor: isDark ? '#9BA1A6' : '#666',
+  textColor: {
+    primary: isDark ? '#ffffff' : '#1a1a1a',
+    secondary: isDark ? '#cccccc' : '#666',
+    light: isDark ? '#999999' : '#aaa',
+    white: '#ffffff',
+  },
+});
+
 const Explore = () => {
     const router = useRouter();
+    
+    // Theme context
+    const { resolvedTheme } = useThemeContext();
+    const COLORS = getColors(resolvedTheme === 'dark');
 
     const allTools = [
       { name: 'AI Scan', icon: 'scan-outline', color: '#667eea', bgColor: '#f0f2ff', feature: 'ai-scan' },
@@ -48,9 +68,9 @@ const Explore = () => {
 
     const allSubjects = [
         { name: 'Mathematics', icon: 'calculator-outline', color: '#667eea', feature: 'calculator' },
-        { name: 'Physics', icon: 'magnet-outline', color: '#764ba2',  feature: 'ai-scan' },
-        { name: 'Chemistry', icon: 'flask-outline', color: '#f093fb',  feature: 'ai-scan' },
-        { name: 'Biology', icon: 'leaf-outline', color: '#43e97b', feature: 'ai-scan' },
+        { name: 'Physics', icon: 'magnet-outline', color: '#764ba2',  feature: 'physics' },
+        { name: 'Chemistry', icon: 'flask-outline', color: '#f093fb',  feature: 'chemistry' },
+        { name: 'Biology', icon: 'leaf-outline', color: '#43e97b', feature: 'biology' },
         { name: 'History', icon: 'time-outline', color: '#ff6b6b',  feature: 'study-notes' },
         { name: 'Geography', icon: 'earth-outline', color: '#4ecdc4',  feature: 'study-notes' },
       //  { name: 'Literature', icon: 'library-outline', color: '#45b7d1',  feature: 'study-notes' },
@@ -59,21 +79,18 @@ const Explore = () => {
        // { name: 'Psychology', icon: 'bulb-outline', color: '#ff9ff3',  feature: 'study-notes' },
     ];
 
-    const [modalVisible, setModalVisible] = useState(false);
-    const [imageUri, setImageUri] = useState<string | null>(null);
-    const [isLoading, setIsLoading] = useState(false);
-    const [loadingMessage, setLoadingMessage] = useState('');
-    const [error, setError] = useState<string | null>(null);
-    const [geminiResponse, setGeminiResponse] = useState<string | null>(null);
-    const [extractedText, setExtractedText] = useState<string | null>(null);
-    const [showAllTools, setShowAllTools] = useState(false);
-    const [showAllSubjects, setShowAllSubjects] = useState(false);
+    // Image scan modal state
+    const [scanModalVisible, setScanModalVisible] = useState(false);
     const [pendingFeature, setPendingFeature] = useState<string | null>(null);
     const [pendingHistoryId, setPendingHistoryId] = useState<number | null>(null);
-    const [noteTitle, setNoteTitle] = useState<string>("");
-    const [noteContent, setNoteContent] = useState<string>("");
-    const [savingNote, setSavingNote] = useState(false);
-    const [showPickerModal, setShowPickerModal] = useState(false);
+    const [showAllTools, setShowAllTools] = useState(false);
+    const [showAllSubjects, setShowAllSubjects] = useState(false);
+
+    // AI Answer modal state
+    const [aiAnswerModalVisible, setAiAnswerModalVisible] = useState(false);
+    const [currentQuestion, setCurrentQuestion] = useState<string>('');
+    const [currentAnswer, setCurrentAnswer] = useState<string>('');
+    const [currentFeature, setCurrentFeature] = useState<string>('ai-scan');
 
     // Display logic for tools and subjects
     const displayedTools = showAllTools ? allTools : allTools.slice(0, 6);
@@ -98,186 +115,191 @@ const Explore = () => {
       if (route) {
         router.push(route as any);
       } else {
-        showImagePickerOptions(feature);
+        openScanModal(feature);
       }
     };
 
-    const showImagePickerOptions = (feature: string) => {
-        setPendingFeature(feature);
-        setShowPickerModal(true);
+    const openScanModal = (feature: string) => {
+      setPendingFeature(feature);
+      setScanModalVisible(true);
     };
 
-    const handleScan = async (feature: string) => {
-        setShowPickerModal(false);
-        const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-        if (permissionResult.granted === false) {
-            alert("Camera permission is required to scan images!");
-            return;
-        }
-        const result = await ImagePicker.launchCameraAsync({
-            allowsEditing: true,
-            quality: 1,
-            
-        });
-        if (!result.canceled && result.assets) {
-            setImageUri(result.assets[0].uri);
-            setModalVisible(true);
-            await processSelectedImage(result.assets[0].uri, feature);
-        }
+    const closeScanModal = () => {
+      setScanModalVisible(false);
+      setPendingFeature(null);
+      setPendingHistoryId(null);
     };
 
-    const handleGallery = async (feature: string) => {
-        setShowPickerModal(false);
-        const result = await ImagePicker.launchImageLibraryAsync({
-            allowsEditing: true,
-            quality: 1,
-            
-        });
-        if (!result.canceled && result.assets) {
-            setImageUri(result.assets[0].uri);
-            setModalVisible(true);
-            await processSelectedImage(result.assets[0].uri, feature);
+    const processScannedImage = async (uri: string): Promise<string> => {
+      try {
+        const creditResult = await subscriptionService.spendCredits(1);
+        if (!creditResult.success) {
+          Alert.alert(
+            "Out of Credits",
+            creditResult.error || "You need at least 1 credit to scan an image.",
+            [
+              { text: "Cancel", style: "cancel" },
+              { text: "Get Credits", onPress: () => router.push('/paywall') }
+            ]
+          );
+          throw new Error('Insufficient credits');
         }
+
+        const text = await processImage(uri);
+        if (!text || text.trim().length === 0) {
+          throw new Error('No text could be detected in the image. Please try with a clearer image.');
+        }
+
+        return text.trim();
+      } catch (error) {
+        console.error('Image processing error:', error);
+        throw new Error('Failed to process the image. Please try again with a clearer image.');
+      }
     };
 
-    const processSelectedImage = async (uri: string, feature: string) => {
-        setIsLoading(true);
-        setError(null);
-        setGeminiResponse(null);
-        setExtractedText(null);
-        setPendingFeature(feature);
-        setNoteTitle("");
-        setNoteContent("");
+    const handleImageProcessed = async (extractedText: string) => {
+      if (!pendingFeature) return;
 
-        try {
-            setLoadingMessage('Scanning image... ');
-            const hasEnoughCredits = await spendCredits(1);
-            if (!hasEnoughCredits) {
-                Alert.alert(
-                    "Out of Credits",
-                    "You need at least 1 credit to scan an image.",
-                    [
-                        { text: "Cancel", style: "cancel" },
-                        { text: "Get Credits", onPress: () => router.push('/paywall') }
-                    ]
-                );
-                setIsLoading(false);
-                return;
-            }
-
-            const text = await processImage(uri);
-            setExtractedText(text);
-
-            if (feature === 'study-notes') {
-                // Pre-fill note title and content
-                setNoteTitle('My Study Note');
-                setNoteContent(text);
-            } else {
-                // Create a history entry for the scan
-                const newHistoryId = await addHistory(uri, feature, text, "");
-                setPendingHistoryId(newHistoryId);
-            }
-
-        } catch (e: any) {
-            setError(e.message || 'Something went wrong. Please try again.');
-        } finally {
-            setIsLoading(false);
-            setLoadingMessage('');
+      try {
+        if (pendingFeature === 'study-notes') {
+          // For study notes, create a note directly
+          const title = extractedText.split('\n')[0].substring(0, 50) + (extractedText.split('\n')[0].length > 50 ? '...' : '');
+          const noteId = await addNote(title, extractedText);
+          await addHistory('', 'study-notes', title, extractedText);
+          
+          Alert.alert(
+            'Note Created',
+            'Your study note has been successfully created!',
+            [{ text: 'OK' }]
+          );
+        } else {
+          // For other features, create history entry and get AI answer
+          const newHistoryId = await addHistory('', pendingFeature, extractedText, '');
+          setPendingHistoryId(newHistoryId);
+          
+          // Get AI answer
+                  const creditResult = await subscriptionService.spendCredits(1);
+        if (!creditResult.success) {
+          Alert.alert(
+            "Out of Credits",
+            creditResult.error || "You need at least 1 credit to get an answer.",
+            [
+              { text: "Cancel", style: "cancel" },
+              { text: "Get Credits", onPress: () => router.push('/paywall') }
+            ]
+          );
+          return;
         }
+
+          const answer = await getAnswerFromGemini(extractedText, pendingFeature);
+          await updateHistoryAnswer(newHistoryId, answer);
+          
+          // Show AI Answer Modal
+          setCurrentQuestion(extractedText);
+          setCurrentAnswer(answer);
+          setCurrentFeature(pendingFeature);
+          setAiAnswerModalVisible(true);
+        }
+        
+        // Close scan modal
+        closeScanModal();
+      } catch (error) {
+        console.error('Failed to process:', error);
+        Alert.alert('Error', 'Failed to process the request. Please try again.');
+      }
     };
 
-    const getAIAnswer = async () => {
-        if (!extractedText || !imageUri || !pendingFeature || !pendingHistoryId) {
-            setError(
-        "Cannot get answer. Missing text, image, feature, or history context."
-      );
-            return;
-        }
-
-        setIsLoading(true);
-        setError(null);
-
-        try {
-            setLoadingMessage('Generating answer... (1 credit)');
-            const hasEnoughCredits = await spendCredits(1);
-            if (!hasEnoughCredits) {
-                Alert.alert(
-                    "Out of Credits",
-                    "You need at least 1 credit to get an answer.",
-                    [
-                        { text: "Cancel", style: "cancel" },
-                        { text: "Get Credits", onPress: () => router.push('/paywall') }
-                    ]
-                );
-                setIsLoading(false);
-                return;
-            }
-
-            const answer = await getAnswerFromGemini(extractedText, pendingFeature);
-            setGeminiResponse(answer);
-
-            await updateHistoryAnswer(pendingHistoryId, answer);
-
-        } catch (e: any) {
-            setError(e.message || 'Something went wrong. Please try again.');
-        } finally {
-            setIsLoading(false);
-            setLoadingMessage('');
-        }
+    const getModalTitle = () => {
+      if (!pendingFeature) return "Scan Document";
+      
+      const featureMap: Record<string, string> = {
+        'study-notes': 'Create Study Note',
+        'ai-scan': 'AI Scan',
+        'calculator': 'Math Problem',
+        'physics': 'Physics Problem',
+        'chemistry': 'Chemistry Problem',
+        'biology': 'Biology Problem',
+        'homework': 'Homework Help',
+        'magic-eraser': 'Magic Eraser',
+      };
+      
+      return featureMap[pendingFeature] || 'Scan Document';
     };
 
-    const handleSaveNote = async () => {
-        if (!noteTitle.trim() || !noteContent.trim()) {
-            setError("Note title and content cannot be empty.");
-            return;
-        }
-        setSavingNote(true);
-        setError(null);
-        try {
-            const noteId = await addNote(noteTitle.trim(), noteContent.trim());
-            await addHistory('', 'notes', noteTitle.trim(), noteContent.trim());
-            setModalVisible(false);
-            setNoteTitle("");
-            setNoteContent("");
-            setExtractedText(null);
-        } catch (e: any) {
-            setError(e.message || 'Failed to save note.');
-        } finally {
-            setSavingNote(false);
-        }
+    const getModalSubtitle = () => {
+      if (!pendingFeature) return "Take a photo or choose from gallery to extract text";
+      
+      const subtitleMap: Record<string, string> = {
+        'study-notes': 'Take a photo or choose from gallery to create a study note',
+        'ai-scan': 'Take a photo or choose from gallery to get AI analysis',
+        'calculator': 'Take a photo of a math problem to get the solution',
+        'physics': 'Take a photo of a physics problem to get the solution',
+        'chemistry': 'Take a photo of a chemistry problem to get the solution',
+        'biology': 'Take a photo of a biology problem to get the solution',
+        'homework': 'Take a photo of your homework to get help',
+        'magic-eraser': 'Take a photo to remove unwanted elements',
+      };
+      
+      return subtitleMap[pendingFeature] || 'Take a photo or choose from gallery to extract text';
     };
 
-    const closeModal = () => {
-        setModalVisible(false);
-        setImageUri(null);
-        setError(null);
-        setGeminiResponse(null);
-        setExtractedText(null);
-        setPendingHistoryId(null);
+    const getActionButtonText = () => {
+      if (!pendingFeature) return "Process";
+      
+      const actionMap: Record<string, string> = {
+        'study-notes': 'Create Note',
+        'ai-scan': 'Get AI Answer',
+        'calculator': 'Solve Problem',
+        'physics': 'Get Solution',
+        'chemistry': 'Get Solution',
+        'biology': 'Get Solution',
+        'homework': 'Get Help',
+        'magic-eraser': 'Remove Elements',
+      };
+      
+      return actionMap[pendingFeature] || 'Process';
     };
 
-    // Theme colors
-    const backgroundColor = useThemeColor({}, 'background');
-    const textColor = useThemeColor({}, 'text');
-    const cardColor = useThemeColor({}, 'background');
-    const borderColor = useThemeColor({}, 'icon');
-    const iconColor = useThemeColor({}, 'icon');
+    const getActionButtonIcon = () => {
+      if (!pendingFeature) return "sparkles-outline";
+      
+      const iconMap: Record<string, string> = {
+        'study-notes': 'document-text-outline',
+        'ai-scan': 'sparkles-outline',
+        'calculator': 'calculator-outline',
+        'physics': 'magnet-outline',
+        'chemistry': 'flask-outline',
+        'biology': 'leaf-outline',
+        'homework': 'book-outline',
+        'magic-eraser': 'sparkles-outline',
+      };
+      
+      return iconMap[pendingFeature] || 'sparkles-outline';
+    };
 
     return (
-        <View style={[styles.container, { backgroundColor }]}>
-            <StatusBar barStyle={backgroundColor === '#fff' ? 'dark-content' : 'light-content'} backgroundColor={backgroundColor} />
+        <View style={[styles.container, { backgroundColor: COLORS.backgroundColor }]}>
+            <StatusBar barStyle={COLORS.textColor.primary === '#fff' ? 'dark-content' : 'light-content'} backgroundColor={COLORS.backgroundColor} />
             
             {/* Header */}
-            <View style={[styles.header, { backgroundColor, borderBottomColor: borderColor }]}>
+            <View style={[styles.header, { backgroundColor: COLORS.headerBackground, borderBottomColor: COLORS.borderColor }]}>
                 <View>
-                    <Text style={[styles.greeting, { color: iconColor }]}>Good morning! 👋</Text>
-                    <Text style={[styles.headerTitle, { color: textColor }]}>Ready to learn?</Text>
+                    <Text style={[styles.greeting, { color: COLORS.iconColor }]}>Good morning! 👋</Text>
+                    <Text style={[styles.headerTitle, { color: COLORS.textColor.primary }]}>Ready to learn?</Text>
                 </View>
-                <TouchableOpacity style={styles.profileButton}>
-                    <View style={[styles.profileAvatar, { backgroundColor: cardColor, borderColor }]}>
-                        <Ionicons name="person-outline" size={20} color={iconColor} />
-                    </View>
-                </TouchableOpacity>
+                <View style={styles.headerButtons}>
+                    <TouchableOpacity 
+                        style={[styles.historyButton, { backgroundColor: COLORS.cardColor, borderColor: COLORS.borderColor }]}
+                        onPress={() => router.push('/HistoryList' as any)}
+                    >
+                        <Ionicons name="time-outline" size={20} color={COLORS.accentColor} />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.profileButton}>
+                        <View style={[styles.profileAvatar, { backgroundColor: COLORS.cardColor, borderColor: COLORS.borderColor }]}>
+                            <Ionicons name="person-outline" size={20} color={COLORS.iconColor} />
+                        </View>
+                    </TouchableOpacity>
+                </View>
             </View>
 
             <ScrollView 
@@ -290,9 +312,9 @@ const Explore = () => {
                 {/* Quick Tools */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
-                        <Text style={[styles.sectionTitle, { color: textColor }]}>Quick Tools</Text>
+                        <Text style={[styles.sectionTitle, { color: COLORS.textColor.primary }]}>Quick Tools</Text>
                         <TouchableOpacity onPress={() => setShowAllTools(!showAllTools)}>
-                            <Text style={[styles.seeAllText, { color: iconColor }]}>
+                            <Text style={[styles.seeAllText, { color: COLORS.iconColor }]}>
                                 {showAllTools ? 'Show less' : 'See all'}
                             </Text>
                         </TouchableOpacity>
@@ -302,14 +324,14 @@ const Explore = () => {
                         {displayedTools.map((tool, index) => (
                             <TouchableOpacity 
                                 key={index} 
-                                style={[styles.toolCard, { backgroundColor: cardColor, borderColor }]}
+                                style={[styles.toolCard, { backgroundColor: COLORS.cardColor, borderColor: COLORS.borderColor }]}
                                 onPress={() => handleToolPress(tool.feature)}
                                 activeOpacity={0.7}
                             >
                                 <View style={[styles.toolIcon, { backgroundColor: tool.color }]}>
                                     <Ionicons name={tool.icon as any} size={20} color="white" />
                                 </View>
-                                <Text style={[styles.toolName, { color: textColor }]}>{tool.name}</Text>
+                                <Text style={[styles.toolName, { color: COLORS.textColor.primary }]}>{tool.name}</Text>
                             </TouchableOpacity>
                         ))}
                     </View>
@@ -318,9 +340,9 @@ const Explore = () => {
                 {/* Subjects */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
-                        <Text style={[styles.sectionTitle, { color: textColor }]}>Subjects</Text>
+                        <Text style={[styles.sectionTitle, { color: COLORS.textColor.primary }]}>Subjects</Text>
                         <TouchableOpacity onPress={() => setShowAllSubjects(!showAllSubjects)}>
-                            <Text style={[styles.seeAllText, { color: iconColor }]}>
+                            <Text style={[styles.seeAllText, { color: COLORS.iconColor }]}>
                                 {showAllSubjects ? 'Show less' : 'Browse all'}
                             </Text>
                         </TouchableOpacity>
@@ -330,174 +352,53 @@ const Explore = () => {
                         {displayedSubjects.map((subject, index) => (
                             <TouchableOpacity 
                                 key={index} 
-                                style={[styles.subjectCard, { backgroundColor: cardColor, borderColor }]}
-                                onPress={() => showImagePickerOptions(subject.feature)}
+                                style={[styles.subjectCard, { backgroundColor: COLORS.cardColor, borderColor: COLORS.borderColor }]}
+                                onPress={() => openScanModal(subject.feature)}
                                 activeOpacity={0.8}
                             >
                                 <View style={[styles.subjectIcon, { backgroundColor: subject.color }]}>
                                     <Ionicons name={subject.icon as any} size={24} color="white" />
                                 </View>
                                 <View style={styles.subjectInfo}>
-                                    <Text style={[styles.subjectName, { color: textColor }]}>{subject.name}</Text>
+                                    <Text style={[styles.subjectName, { color: COLORS.textColor.primary }]}>{subject.name}</Text>
                                     
                                 </View>
-                                <Ionicons name="chevron-forward" size={16} color={iconColor} />
+                                <Ionicons name="chevron-forward" size={16} color={COLORS.iconColor} />
                             </TouchableOpacity>
                         ))}
                     </View>
                 </View>
             </ScrollView>
 
-            {/* Picker Modal for image source selection */}
-            {showPickerModal && (
-                <Modal
-                    transparent
-                    animationType="fade"
-                    visible={showPickerModal}
-                    onRequestClose={() => setShowPickerModal(false)}
-                >
-                    <TouchableOpacity 
-                        style={styles.pickerModalOverlay}
-                        activeOpacity={1}
-                        onPress={() => setShowPickerModal(false)}
-                    >
-                        <View style={styles.pickerModalContainer}>
-                            <TouchableOpacity 
-                                style={styles.pickerOption} 
-                                onPress={() => handleScan(pendingFeature!)}
-                            >
-                                <Ionicons name="camera-outline" size={24} color="#6366f1" />
-                                <Text style={styles.pickerOptionText}>Take Photo</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity 
-                                style={styles.pickerOption} 
-                                onPress={() => handleGallery(pendingFeature!)}
-                            >
-                                <Ionicons name="image-outline" size={24} color="#6366f1" />
-                                <Text style={styles.pickerOptionText}>Choose from Gallery</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity 
-                                style={styles.pickerCancel} 
-                                onPress={() => setShowPickerModal(false)}
-                            >
-                                <Text style={styles.pickerCancelText}>Cancel</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </TouchableOpacity>
-                </Modal>
-            )}
+            {/* Image Scan Modal */}
+            <ImageScanModal
+                visible={scanModalVisible}
+                onClose={closeScanModal}
+                onImageProcessed={handleImageProcessed}
+                title={getModalTitle()}
+                subtitle={getModalSubtitle()}
+                actionButtonText={getActionButtonText()}
+                actionButtonIcon={getActionButtonIcon()}
+                accentColor={COLORS.accentColor}
+                onProcessImage={processScannedImage}
+                showExtractedText={true}
+                showActionButton={true}
+            />
 
-            {/* Enhanced Modal */}
-            <Modal
-                animationType="slide"
-                transparent={true}
-                visible={modalVisible}
-                onRequestClose={closeModal}
-            >
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContainer}>
-                        <View style={styles.dragHandleContainer}>
-                            <View style={styles.dragHandle} />
-                        </View>
-                        <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>AI Solution</Text>
-                            <TouchableOpacity
-                                style={styles.modalCloseButton}
-                                onPress={closeModal}
-                                activeOpacity={0.7}
-                            >
-                                <Ionicons name="close" size={24} color="#666" />
-                            </TouchableOpacity>
-                        </View>
-                        
-                        {imageUri && (
-                            <Image 
-                                source={{ uri: imageUri }} 
-                                style={styles.modalImage} 
-                                resizeMode="contain"
-                            />
-                        )}
-                        
-                        <View style={styles.modalContent}>
-                            {isLoading && (
-                                <View style={styles.loadingContainer}>
-                                    <ActivityIndicator size="large" color="#667eea" />
-                                    <Text style={styles.loadingText}>{loadingMessage}</Text>
-                                </View>
-                            )}
-                            
-                            {error && !isLoading && (
-                                <View style={styles.errorContainer}>
-                                    <Ionicons name="alert-circle" size={24} color="#ff6b6b" />
-                                    <Text style={styles.errorText}>{error}</Text>
-                                </View>
-                            )}
-
-                            {/* Study Notes Special Flow */}
-                            {!isLoading && !error && extractedText && pendingFeature === 'study-notes' && (
-                                <View style={{ flex: 1 }}>
-                                    <Text style={styles.sectionTitle}>Create Study Note</Text>
-                                    <Text style={styles.inputLabel}>Title</Text>
-                                    <TextInput
-                                        style={styles.input}
-                                        value={noteTitle}
-                                        onChangeText={setNoteTitle}
-                                        placeholder="Enter note title"
-                                    />
-                                                <Text style={styles.inputLabel}>Content</Text>
-                                    <ScrollView style={styles.extractedTextView}>
-                                        <TextInput
-                                            style={[styles.extractedTextContent, { minHeight: 120 }]}
-                                            value={noteContent}
-                                            onChangeText={setNoteContent}
-                                            placeholder="Enter note content"
-                                            multiline
-                                        />
-                                    </ScrollView>
-                                    <TouchableOpacity
-                                        style={styles.getAnswerButton}
-                                        onPress={handleSaveNote}
-                                        disabled={savingNote}
-                                    >
-                                        {savingNote ? (
-                                            <ActivityIndicator color="white" />
-                                        ) : (
-                                            <Ionicons name="save-outline" size={20} color="white" style={{ marginRight: 8 }}/>
-                                        )}
-                                        <Text style={styles.getAnswerButtonText}>Save Note</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            )}
-
-                            {/* Default AI/Scan Flow */}
-                            {!isLoading && !error && extractedText && pendingFeature !== 'study-notes' && !geminiResponse && (
-                                <View style={{ flex: 1 }}>
-                                    <Text style={styles.sectionTitle}>Extracted Text</Text>
-                                    <ScrollView style={styles.extractedTextView}>
-                                        <Text style={styles.extractedTextContent}>{extractedText}</Text>
-                                    </ScrollView>
-                                    <TouchableOpacity style={styles.getAnswerButton} onPress={getAIAnswer}>
-                                        <Ionicons name="sparkles-outline" size={20} color="white" style={{ marginRight: 8}}/>
-                                        <Text style={styles.getAnswerButtonText}>Get AI Answer (1 Credit)</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            )}
-                            
-                            {!isLoading && geminiResponse && (
-                                <View style={{ flex: 1 }}>
-                                    <Text style={styles.sectionTitle}>AI Solution</Text>
-                                    <ScrollView 
-                                        style={styles.responseContainer}
-                                        showsVerticalScrollIndicator={false}
-                                    >
-                                        <Text style={styles.responseText}>{geminiResponse}</Text>
-                                    </ScrollView>
-                                </View>
-                            )}
-                        </View>
-                    </View>
-                </View>
-            </Modal>
+            {/* AI Answer Modal */}
+            <AIAnswerModal
+                visible={aiAnswerModalVisible}
+                onClose={() => setAiAnswerModalVisible(false)}
+                onViewHistory={() => {
+                    setAiAnswerModalVisible(false);
+                    router.push('/HistoryList' as any);
+                }}
+                title={getModalTitle()}
+                question={currentQuestion}
+                answer={currentAnswer}
+                feature={currentFeature}
+                accentColor={COLORS.accentColor}
+            />
         </View>
     );
 }
@@ -705,188 +606,18 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: '#666',
     },
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.4)',
-        justifyContent: 'flex-end',
-    },
-    modalContainer: {
-        backgroundColor: 'white',
-        borderTopLeftRadius: 28,
-        borderTopRightRadius: 28,
-        height: height * 0.85,
-        paddingTop: 8,
-        shadowColor: "#000",
-        shadowOffset: {
-            width: 0,
-            height: -4,
-        },
-        shadowOpacity: 0.1,
-        shadowRadius: 10,
-        elevation: 10,
-    },
-    dragHandleContainer: {
-        width: '100%',
-        alignItems: 'center',
-        paddingVertical: 10,
-    },
-    dragHandle: {
-        width: 40,
-        height: 5,
-        borderRadius: 2.5,
-        backgroundColor: '#dcdcdc',
-    },
-    modalHeader: {
+    headerButtons: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingHorizontal: 24,
-        paddingVertical: 20,
-        borderBottomWidth: 1,
-        borderBottomColor: '#f0f0f0',
-    },
-    modalTitle: {
-        fontSize: 20,
-        fontWeight: '700',
-        color: '#1a1a1a',
-    },
-    modalCloseButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: '#f8f9fa',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    modalImage: {
-        width: '90%',
-        alignSelf: 'center',
-        height: 150,
-        borderRadius: 16,
-        marginBottom: 20,
-    },
-    modalContent: {
-        flex: 1,
-        paddingHorizontal: 24,
-        paddingBottom: 24,
-    },
-    loadingContainer: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 40,
-    },
-    loadingText: {
-        marginTop: 16,
-        fontSize: 16,
-        color: '#666',
-        fontWeight: '500',
-    },
-    errorContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#ffebee',
-        padding: 16,
-        borderRadius: 12,
         gap: 12,
     },
-    errorText: {
-        color: '#c62828',
-        fontSize: 15,
-        fontWeight: '500',
-        flex: 1,
-    },
-    responseContainer: {
-        flex: 1,
-        backgroundColor: '#f8f9fa',
-        borderRadius: 16,
-        padding: 20,
-    },
-    responseText: {
-        fontSize: 15,
-        color: '#333',
-        lineHeight: 24,
-    },
-    extractedTextView: {
-        flex: 1,
-        backgroundColor: '#f3f4f6',
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 16,
-    },
-    extractedTextContent: {
-        color: '#374151',
-        fontSize: 15,
-        lineHeight: 22,
-    },
-    getAnswerButton: {
-        backgroundColor: '#22c55e',
-        flexDirection: 'row',
-        alignItems: 'center',
+    historyButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
         justifyContent: 'center',
-        paddingVertical: 14,
-        borderRadius: 16,
-        shadowColor: '#22c55e',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 5,
-    },
-    getAnswerButtonText: {
-        color: 'white',
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    inputLabel: {
-        fontWeight: '600',
-        color: '#667eea',
-        marginTop: 8,
-        marginBottom: 4,
-        fontSize: 15,
-    },
-    input: {
-        backgroundColor: '#f3f4f6',
-        borderRadius: 8,
-        padding: 12,
-        fontSize: 16,
-        color: '#222',
-        marginBottom: 8,
+        alignItems: 'center',
         borderWidth: 1,
-        borderColor: '#e0e7ef',
-    },
-    pickerModalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.4)',
-        justifyContent: 'flex-end',
-    },
-    pickerModalContainer: {
-        backgroundColor: 'white',
-        borderTopLeftRadius: 16,
-        borderTopRightRadius: 16,
-        padding: 16,
-        paddingBottom: 32,
-    },
-    pickerOption: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 16,
-        paddingHorizontal: 24,
-        borderBottomWidth: 1,
-        borderBottomColor: '#f3f4f6',
-    },
-    pickerOptionText: {
-        fontSize: 16,
-        color: '#111827',
-        marginLeft: 16,
-    },
-    pickerCancel: {
-        paddingVertical: 16,
-        alignItems: 'center',
-        marginTop: 8,
-    },
-    pickerCancelText: {
-        fontSize: 16,
-        color: '#ef4444',
-        fontWeight: '600',
+        borderColor: 'rgba(255,255,255,0.3)',
     },
 });
 

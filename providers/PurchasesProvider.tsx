@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Platform } from 'react-native';
-import Purchases, { CustomerInfo, LOG_LEVEL, PurchasesOffering, PurchasesPackage } from 'react-native-purchases';
-import { addExpiringCredits } from '../services/historyStorage';
+import Purchases, { CustomerInfo, PurchasesOffering, PurchasesPackage } from 'react-native-purchases';
+import { addExpiringCreditsOnline } from '../services/onlineStorage';
 
 interface PurchasesContextType {
   user: {
@@ -34,7 +34,7 @@ const PurchasesProvider = ({ children }: { children: React.ReactNode }) => {
         await Purchases.configure({ apiKey: process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY! });
       }
 
-      Purchases.setLogLevel(LOG_LEVEL.DEBUG);
+      // Purchases.setLogLevel(LOG_LEVEL.DEBUG);
 
       const offerings = await Purchases.getOfferings();
       setOfferings(offerings.current);
@@ -84,10 +84,10 @@ const PurchasesProvider = ({ children }: { children: React.ReactNode }) => {
         if (expirationDate) {
           if (pack.product.identifier.includes('week')) {
             console.log('Adding 100 expiring credits for week plan');
-            await addExpiringCredits(100, expirationDate);
+            await addExpiringCreditsOnline(100, expirationDate);
           } else if (pack.product.identifier.includes('year')) {
             console.log('Adding 1000 expiring credits for year plan');
-            await addExpiringCredits(1000, expirationDate);
+            await addExpiringCreditsOnline(1000, expirationDate);
           } else {
             console.log('No matching plan for credits');
           }

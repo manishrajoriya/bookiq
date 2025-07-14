@@ -13,8 +13,6 @@ async function getDb(): Promise<SQLite.SQLiteDatabase> {
 export const initDatabase = async () => {
     console.log("DATABASE: Initializing all tables...");
     await initHistoryTable();
-    await initCreditsTable();
-    await initExpiringCreditsTable();
     await initNotesTable();
     await initScanNotesTable();
     await initQuizTable();
@@ -178,101 +176,6 @@ export const deleteNote = async (id: number) => {
     await localDb.runAsync("DELETE FROM notes WHERE id = ?;", [id]);
 };
 
-// --- Credits System ---
-
-export const initCreditsTable = async () => {
-  const localDb = await getDb();
-  await localDb.execAsync(
-    'CREATE TABLE IF NOT EXISTS credits (id INTEGER PRIMARY KEY CHECK (id = 1), balance INTEGER DEFAULT 0);'
-  );
-  const res = await localDb.getAllAsync('SELECT * FROM credits WHERE id = 1;');
-  if (!res || res.length === 0) {
-    await localDb.runAsync(
-      'INSERT INTO credits (id, balance) VALUES (1, 0);'
-    );
-  }
-};
-
-export const initExpiringCreditsTable = async () => {
-  const localDb = await getDb();
-  await localDb.execAsync(
-    'CREATE TABLE IF NOT EXISTS expiring_credits (id INTEGER PRIMARY KEY AUTOINCREMENT, amount INTEGER, expires_at TEXT);'
-  );
-};
-
-export const addExpiringCredits = async (amount: number, expires_at: string) => {
-    const localDb = await getDb();
-    await localDb.runAsync(
-        'INSERT INTO expiring_credits (amount, expires_at) VALUES (?, ?);',
-        [amount, expires_at]
-    );
-};
-
-const cleanupExpiredCredits = async () => {
-    const localDb = await getDb();
-    await localDb.runAsync('DELETE FROM expiring_credits WHERE expires_at < ?;', [new Date().toISOString()]);
-};
-
-export const getCredits = async (): Promise<number> => {
-  await cleanupExpiredCredits();
-  const localDb = await getDb();
-  
-  const permanentCreditsRes = await localDb.getFirstAsync('SELECT balance FROM credits WHERE id = 1;');
-  const permanentCredits = (permanentCreditsRes as { balance: number })?.balance ?? 0;
-
-  const expiringCreditsRes = await localDb.getFirstAsync('SELECT SUM(amount) as total FROM expiring_credits;');
-  const expiringCredits = (expiringCreditsRes as { total: number })?.total ?? 0;
-  
-  return permanentCredits + expiringCredits;
-};
-
-export const addCredits = async (amount: number) => {
-  const localDb = await getDb();
-  await localDb.runAsync(
-    'UPDATE credits SET balance = balance + ? WHERE id = 1;',
-    [amount]
-  );
-};
-
-export const spendCredits = async (amount: number): Promise<boolean> => {
-    const localDb = await getDb();
-    await cleanupExpiredCredits();
-
-    const permanentCreditsRes = await localDb.getFirstAsync<{ balance: number }>('SELECT balance FROM credits WHERE id = 1;');
-    const permanentCredits = permanentCreditsRes?.balance ?? 0;
-
-    const expiringCreditsRes = await localDb.getFirstAsync<{ total: number }>('SELECT SUM(amount) as total FROM expiring_credits;');
-    const expiringCreditsTotal = expiringCreditsRes?.total ?? 0;
-
-    if ((permanentCredits + expiringCreditsTotal) < amount) {
-        return false;
-    }
-
-    let amountToDeduct = amount;
-
-    const expiringCredits = await localDb.getAllAsync<{id: number, amount: number}>('SELECT id, amount FROM expiring_credits ORDER BY expires_at ASC;');
-
-    for (const credit of expiringCredits) {
-        if (amountToDeduct === 0) break;
-        
-        const deductAmount = Math.min(amountToDeduct, credit.amount);
-        const newAmount = credit.amount - deductAmount;
-        amountToDeduct -= deductAmount;
-
-        if (newAmount === 0) {
-            await localDb.runAsync('DELETE FROM expiring_credits WHERE id = ?;', [credit.id]);
-        } else {
-            await localDb.runAsync('UPDATE expiring_credits SET amount = ? WHERE id = ?;', [newAmount, credit.id]);
-        }
-    }
-
-    if (amountToDeduct > 0) {
-        await localDb.runAsync('UPDATE credits SET balance = balance - ? WHERE id = 1;', [amountToDeduct]);
-    }
-
-    return true;
-};
-
 // --- Scan Notes ---
 export interface ScanNote {
     id: number;
@@ -410,7 +313,6 @@ export const resetDatabase = async () => {
   try {
     console.log("DATABASE: Resetting all tables...");
     await localDb.execAsync("DROP TABLE IF EXISTS history;");
-    await localDb.execAsync("DROP TABLE IF EXISTS credits;");
     await localDb.execAsync("DROP TABLE IF EXISTS notes;");
     await localDb.execAsync("DROP TABLE IF EXISTS scan_notes;");
     await localDb.execAsync("DROP TABLE IF EXISTS quiz_maker;");
@@ -565,4 +467,20 @@ export const getAllFlashCardSets = async (): Promise<FlashCardSet[]> => {
       console.warn("Could not get flash card sets.", error);
       return [];
     }
+};
+
+export const getFlashCardSetById = async (id: number): Promise<FlashCardSet | null> => {
+    const localDb = await getDb();
+    const result = await localDb.getFirstAsync("SELECT * FROM flash_card_sets WHERE id = ?;", [id]);
+    return result as FlashCardSet | null;
+};
+
+export const updateFlashCardSet = async (id: number, title: string, content: string) => {
+    const localDb = await getDb();
+    await localDb.runAsync("UPDATE flash_card_sets SET title = ?, content = ? WHERE id = ?;", [title, content, id]);
+};
+
+export const deleteFlashCardSet = async (id: number) => {
+    const localDb = await getDb();
+    await localDb.runAsync("DELETE FROM flash_card_sets WHERE id = ?;", [id]);
 };

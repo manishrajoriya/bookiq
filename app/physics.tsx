@@ -24,7 +24,8 @@ import {
 } from 'react-native';
 import NoteReaderModal from '../components/NoteReaderModal';
 import { processImage } from '../services/geminiServices';
-import { addHistory, addScanNote, getAllScanNotes, spendCredits } from '../services/historyStorage';
+import { addHistory, addScanNote, getAllScanNotes } from '../services/historyStorage';
+import subscriptionService from '../services/subscriptionService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -235,11 +236,11 @@ const StudyNotes = () => {
       setScanState(prev => ({ ...prev, isProcessing: true, progress: 10 }));
       
       // Check credits first
-      const hasEnoughCredits = await spendCredits(1);
-      if (!hasEnoughCredits) {
+      const creditResult = await subscriptionService.spendCredits(1);
+      if (!creditResult.success) {
         Alert.alert(
           "Out of Credits",
-          "You need at least 1 credit to scan an image.",
+          creditResult.error || "You need at least 1 credit to scan an image. Please upgrade your subscription.",
           [
             { text: "Cancel", style: "cancel" },
             { text: "Get Credits", onPress: () => router.push('/paywall') }

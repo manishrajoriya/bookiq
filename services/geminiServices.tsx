@@ -1,7 +1,15 @@
 import axios from "axios";
 import * as FileSystem from "expo-file-system";
 
+// Supabase Edge Function configuration
 
+const SUPABASE_BASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL_FUNCTIONS;
+const SUPABASE_BEARER_TOKEN = process.env.EXPO_PUBLIC_SUPABASE_BEARER_TOKEN;
+// console.log('GEMINI_SERVICE: Supabase base URL:', SUPABASE_BASE_URL);
+// console.log('GEMINI_SERVICE: Supabase bearer token:', SUPABASE_BEARER_TOKEN);
+
+//const SUPABASE_BASE_URL = "https://mnjhkeygyczkziowlrab.supabase.co/functions/v1";
+//const SUPABASE_BEARER_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1uamhrZXlneWN6a3ppb3dscmFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE4ODQ4NzcsImV4cCI6MjA2NzQ2MDg3N30.9unaHI1ZXmSLMDf1szwmsR6oGXpDrn7-MTH-YXH5hng";
 // Prompt templates for each feature/tool
 const PROMPT_TEMPLATES: Record<string, (text: string) => string> = {
   "ai-scan": (text) => `\nYou are an expert AI homework assistant. Analyze the following image text and provide a clear, step-by-step solution or explanation.\n\nImage Content:\n"${text}"\n`,
@@ -30,31 +38,29 @@ export const processImage = async (imageUri: string): Promise<string> => {
     
     console.log("GEMINI_SERVICE: Successfully converted image to base64, length:", base64Image.length);
 
-    const requestBody = {
-      requests: [
-        {
-          image: { content: base64Image },
-          features: [{ type: "DOCUMENT_TEXT_DETECTION" }],
-        },
-      ],
-    };
-
-    console.log("GEMINI_SERVICE: Sending request to Google Cloud Vision API...");
+    const supabaseEdgeUrl = `${SUPABASE_BASE_URL}/process-image`;
+    console.log('GEMINI_SERVICE: Supabase base URL:', SUPABASE_BASE_URL);
+    console.log("GEMINI_SERVICE: Sending request to Supabase Edge Function...");
     
     const response = await axios.post(
-      `https://vision.googleapis.com/v1/images:annotate?key=${process.env.EXPO_PUBLIC_GOOGLE_CLOUD_VISION_API_KEY}`,
-      requestBody,
-      { headers: { "Content-Type": "application/json" } }
+      supabaseEdgeUrl,
+      { imageBase64: base64Image },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SUPABASE_BEARER_TOKEN}`,
+        },
+      }
     );
 
-    console.log("GEMINI_SERVICE: Received response from Google Cloud Vision API");
+    console.log("GEMINI_SERVICE: Received response from Supabase Edge Function");
 
-    if (!response.data.responses?.[0]?.fullTextAnnotation?.text) {
+    if (!response.data?.text) {
       console.warn("GEMINI_SERVICE: No text detected in the image response");
       throw new Error("No text detected in the image");
     }
 
-    const extractedText = response.data.responses[0].fullTextAnnotation.text;
+    const extractedText = response.data.text;
     console.log("GEMINI_SERVICE: Successfully extracted text, length:", extractedText.length);
     console.log("GEMINI_SERVICE: Extracted text preview:", extractedText.substring(0, 100) + "...");
 
@@ -76,28 +82,63 @@ export const getAnswerFromGemini = async (
   extractedText: string,
   feature: string
 ): Promise<string> => {
-  // Choose prompt template
-  const promptTemplate = PROMPT_TEMPLATES[feature] || PROMPT_TEMPLATES["default"];
-  const prompt = promptTemplate(extractedText);
-
-  // Send to Gemini
+  const supabaseEdgeUrl = `${SUPABASE_BASE_URL}/getAnswerFromGemini`;
+  
+  console.log('GEMINI_SERVICE: Attempting to get answer from Gemini');
+  console.log('GEMINI_SERVICE: URL:', supabaseEdgeUrl);
+  console.log('GEMINI_SERVICE: Feature:', feature);
+  console.log('GEMINI_SERVICE: Text length:', extractedText.length);
+  
   try {
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite-preview-02-05:generateContent?key=${process.env.EXPO_PUBLIC_GEMINI_API_KEY}`,
-      {
-        contents: [{ parts: [{ text: prompt }] }],
+      supabaseEdgeUrl,
+      { 
+        extractedText,
+        feature 
       },
-      { headers: { "Content-Type": "application/json" } }
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SUPABASE_BEARER_TOKEN}`,
+        },
+        timeout: 30000, // 30 second timeout
+      }
     );
 
-    if (!response.data.candidates?.[0]?.content?.parts?.[0]?.text) {
-      throw new Error("No response received from Gemini");
+    console.log('GEMINI_SERVICE: Response received:', response.status);
+
+    if (!response.data?.answer) {
+      console.error('GEMINI_SERVICE: No answer in response data:', response.data);
+      throw new Error('No valid response received from Edge Function');
     }
 
-    return response.data.candidates[0].content.parts[0].text;
+    return response.data.answer;
   } catch (error) {
-    console.error("Error getting Gemini response:", error);
-    throw new Error("Failed to get AI response. Please try again later.");
+    console.error('Error getting Gemini response:', error);
+    
+    if (axios.isAxiosError(error)) {
+      console.error('GEMINI_SERVICE: Axios error details:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        message: error.message,
+        code: error.code
+      });
+      
+      if (error.code === 'NETWORK_ERROR') {
+        throw new Error('Network error: Please check your internet connection and try again.');
+      }
+      
+      if (error.response?.status === 401) {
+        throw new Error('Authentication error: Please check your API credentials.');
+      }
+      
+      if (error.response?.status === 404) {
+        throw new Error('Service not found: Edge function may not be deployed.');
+      }
+    }
+    
+    throw new Error('Failed to get AI response. Please try again later.');
   }
 };
 
@@ -105,58 +146,31 @@ export const generateQuizFromNotes = async (
   notesContent: string,
   quizType: 'multiple-choice' | 'true-false' | 'fill-blank' = 'multiple-choice'
 ): Promise<string> => {
-  const prompt = `You are an expert quiz generator. Create a comprehensive quiz based on the following content.
-
-Content:
-"${notesContent}"
-
-Requirements:
-- Generate many ${quizType} questions 
-- Make questions challenging but fair
-- Include a mix of difficulty levels
-- For multiple choice: provide 4 options (A, B, C, D) with only one correct answer
-- For true/false: provide clear statements that are definitely true or false
-- For fill in the blank: provide sentences with key terms missing
-- Format the output clearly with question numbers
-- Include the correct answers at the end
-
-Please format your response exactly as follows:
-1. [Question 1]
-   A) [Option A]
-   B) [Option B]
-   C) [Option C]
-   D) [Option D]
-
-2. [Question 2]
-   A) [Option A]
-   B) [Option B]
-   C) [Option C]
-   D) [Option D]
-
-[Continue with more questions...]
-
-ANSWERS:
-1. [Correct answer letter] - [Brief explanation]
-2. [Correct answer letter] - [Brief explanation]
-[Continue with all answers...]`;
-
+  const supabaseEdgeUrl = `${SUPABASE_BASE_URL}/genrateQuizFromNotes`;
+  
   try {
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite-preview-02-05:generateContent?key=${process.env.EXPO_PUBLIC_GEMINI_API_KEY}`,
-      {
-        contents: [{ parts: [{ text: prompt }] }],
+      supabaseEdgeUrl,
+      { 
+        notesContent,
+        quizType 
       },
-      { headers: { "Content-Type": "application/json" } }
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SUPABASE_BEARER_TOKEN}`,
+        },
+      }
     );
 
-    if (!response.data.candidates?.[0]?.content?.parts?.[0]?.text) {
-      throw new Error("No response received from Gemini");
+    if (!response.data?.quiz) {
+      throw new Error('No valid response received from Edge Function');
     }
 
-    return response.data.candidates[0].content.parts[0].text;
+    return response.data.quiz;
   } catch (error) {
-    console.error("Error generating quiz from notes:", error);
-    throw new Error("Failed to generate quiz. Please try again later.");
+    console.error('Error generating quiz from notes:', error);
+    throw new Error('Failed to generate quiz. Please try again later.');
   }
 };
 
@@ -164,72 +178,59 @@ export const generateFlashCardsFromNotes = async (
   notesContent: string,
   cardType: 'term-definition' | 'question-answer' = 'term-definition'
 ): Promise<string> => {
-  const prompt = `You are an expert flashcard generator. Create a set of flashcards based on the following study notes content.
-
-Study Notes Content:
-"${notesContent}"
-
-Requirements:
-- The flashcard type is ${cardType}.
-- For 'term-definition', provide a key term and its definition.
-- For 'question-answer', provide a question and a concise answer.
-- Format the output clearly, separating the front and back of each card.
-- Ensure the content is accurate and directly related to the provided notes.
-
-Please format your response as follows, using '---' to separate cards:
-FRONT: [Term/Question 1]
-BACK: [Definition/Answer 1]
----
-FRONT: [Term/Question 2]
-BACK: [Definition/Answer 2]
----
-...`;
-
+  const supabaseEdgeUrl = `${SUPABASE_BASE_URL}/genrateFlashCardFromNotes`;
+  
   try {
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite-preview-02-05:generateContent?key=${process.env.EXPO_PUBLIC_GEMINI_API_KEY}`,
-      {
-        contents: [{ parts: [{ text: prompt }] }],
+      supabaseEdgeUrl,
+      { 
+        notesContent,
+        cardType 
       },
-      { headers: { "Content-Type": "application/json" } }
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SUPABASE_BEARER_TOKEN}`,
+        },
+      }
     );
 
-    if (!response.data.candidates?.[0]?.content?.parts?.[0]?.text) {
-      throw new Error("No response received from Gemini");
+    if (!response.data?.flashcards) {
+      throw new Error('No valid response received from Edge Function');
     }
 
-    return response.data.candidates[0].content.parts[0].text;
+    return response.data.flashcards;
   } catch (error) {
-    console.error("Error generating flashcards from notes:", error);
-    throw new Error("Failed to generate flashcards. Please try again later.");
+    console.error('Error generating flashcards from notes:', error);
+    throw new Error('Failed to generate flashcards. Please try again later.');
   }
 };
 
 export const generateEnhancedNotes = async (
   notesContent: string
 ): Promise<string> => {
-  const supabaseEdgeUrl = `https://mnjhkeygyczkziowlrab.supabase.co/functions/v1/enhancenotes`;
-  const supabaseBearerToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1uamhrZXlneWN6a3ppb3dscmFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE4ODQ4NzcsImV4cCI6MjA2NzQ2MDg3N30.9unaHI1ZXmSLMDf1szwmsR6oGXpDrn7-MTH-YXH5hng';
-
+  const supabaseEdgeUrl = `${SUPABASE_BASE_URL}/enhancenotes`;
+  
   try {
     const response = await axios.post(
       supabaseEdgeUrl,
-      { notesContent }, // <-- correct key
+      { notesContent },
       {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseBearerToken}`,
+          'Authorization': `Bearer ${SUPABASE_BEARER_TOKEN}`,
         },
       }
     );
 
     if (!response.data?.enhancedNotes) {
-      throw new Error('No valid response received from  Function');
+      throw new Error('No valid response received from Edge Function');
     }
 
     return response.data.enhancedNotes;
   } catch (error) {
     console.error('Error enhancing notes:', error);
+    console.log(' Error enhancing notes:', error);
     throw new Error('Failed to enhance notes. Please try again later.');
   }
 };

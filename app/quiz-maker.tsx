@@ -3,25 +3,29 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  Animated,
-  Dimensions,
-  Platform,
-  SafeAreaView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  Vibration,
-  View
+    ActivityIndicator,
+    Alert,
+    Animated,
+    Dimensions,
+    Platform,
+    SafeAreaView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    Vibration,
+    View
 } from 'react-native';
+import ImageScanModal from '../components/ImageScanModal';
 import ManualQuizModal from '../components/ManualQuizModal';
 import NoteReaderModal from '../components/NoteReaderModal';
 import PracticeQuizModal from '../components/PracticeQuizModal';
 import QuizGenerationModal from '../components/QuizGenerationModal';
 import ScanQuizModal from '../components/ScanQuizModal';
 import { useThemeContext } from '../providers/ThemeProvider';
+import { processImage } from '../services/geminiServices';
 import { getAllQuizzes } from '../services/historyStorage';
+import subscriptionService from '../services/subscriptionService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -86,6 +90,9 @@ const QuizMaker = () => {
   const [scanQuizModalVisible, setScanQuizModalVisible] = useState(false);
   const [practiceModalVisible, setPracticeModalVisible] = useState(false);
   
+  // Image scan modal state
+  const [scanModalVisible, setScanModalVisible] = useState(false);
+  
   // Error handling
   const [error, setError] = useState<ErrorState>({
     type: null,
@@ -141,6 +148,54 @@ const QuizMaker = () => {
 
   const openScanQuizModal = () => {
     setScanQuizModalVisible(true);
+  };
+
+  const openScanModal = () => {
+    setScanModalVisible(true);
+  };
+
+  const closeScanModal = () => {
+    setScanModalVisible(false);
+  };
+
+  const processScannedImage = async (uri: string): Promise<string> => {
+    try {
+      const creditResult = await subscriptionService.spendCredits(1);
+      if (!creditResult.success) {
+        Alert.alert(
+          "Out of Credits",
+          creditResult.error || "You need at least 1 credit to scan an image.",
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Get Credits", onPress: () => router.push('/paywall') }
+          ]
+        );
+        throw new Error('Insufficient credits');
+      }
+
+      const text = await processImage(uri);
+      if (!text || text.trim().length === 0) {
+        throw new Error('No text could be detected in the image. Please try with a clearer image.');
+      }
+
+      return text.trim();
+    } catch (error) {
+      console.error('Image processing error:', error);
+      throw new Error('Failed to process the image. Please try again with a clearer image.');
+    }
+  };
+
+  const handleImageProcessed = (extractedText: string) => {
+    closeScanModal();
+    // Open quiz generation modal with scanned content
+    setSelectedQuiz({
+      id: 0,
+      title: 'Scanned Document',
+      content: extractedText,
+      quiz_type: 'multiple-choice',
+      createdAt: new Date().toISOString()
+    });
+    setQuizGenerationModalVisible(true);
   };
 
   const openNotePreview = (quiz: Quiz) => {
@@ -249,29 +304,31 @@ const QuizMaker = () => {
     const hasAnswers = (item.content || '').includes('ANSWERS:');
     
     return (
-      <Animated.View
+      <View
         style={[
           styles.quizCard,
           { 
             backgroundColor: COLORS.cardColor, 
             borderColor: COLORS.borderColor,
-            transform: [{ scale: fadeAnim }]
           }
         ]}
       >
+        {/* Main Content Area */}
         <TouchableOpacity 
           onPress={() => openNotePreview(item)}
           activeOpacity={0.8}
           style={styles.quizContent}
         >
+          {/* Header with Title and Date */}
           <View style={styles.quizHeader}>
             <View style={styles.quizTitleContainer}>
-              <Text style={[styles.quizTitle, { color: COLORS.textColor.primary }]} numberOfLines={1}>
+              <Text style={[styles.quizTitle, { color: COLORS.textColor.primary }]} numberOfLines={2}>
                 {item.title || 'Untitled Quiz'}
               </Text>
               {hasAnswers && (
                 <View style={[styles.answersBadge, { backgroundColor: COLORS.successColor }]}>
                   <Ionicons name="checkmark-circle" size={12} color={COLORS.textColor.white} />
+                  <Text style={[styles.badgeText, { color: COLORS.textColor.white }]}>Answers</Text>
                 </View>
               )}
             </View>
@@ -280,14 +337,15 @@ const QuizMaker = () => {
             </Text>
           </View>
           
+          {/* Content Preview */}
           <Text 
-            numberOfLines={2} 
+            numberOfLines={3} 
             style={[styles.quizContentText, { color: COLORS.textColor.secondary }]}
-            ellipsizeMode="tail"
           >
             {(item.content || '').length > 100 ? (item.content || '').substring(0, 100) + '...' : (item.content || 'No content')}
           </Text>
           
+          {/* Stats Footer */}
           <View style={styles.quizFooter}>
             <View style={styles.quizStats}>
               <View style={[styles.statItem, { backgroundColor: COLORS.backgroundColor }]}>
@@ -306,22 +364,23 @@ const QuizMaker = () => {
           </View>
         </TouchableOpacity>
         
+        {/* Action Buttons */}
         <View style={styles.quizActions}>
           <TouchableOpacity 
             style={[styles.actionButton, { backgroundColor: COLORS.successColor }]}
             onPress={() => startPractice(item)}
           >
-            <Ionicons name="play" size={18} color={COLORS.textColor.white} />
+            <Ionicons name="play" size={20} color={COLORS.textColor.white} />
           </TouchableOpacity>
           
           <TouchableOpacity 
             style={[styles.actionButton, { backgroundColor: COLORS.backgroundColor }]}
             onPress={() => openQuizModal(item)}
           >
-            <Ionicons name="help-circle" size={18} color={COLORS.accentColor} />
+            <Ionicons name="help-circle" size={20} color={COLORS.accentColor} />
           </TouchableOpacity>
         </View>
-      </Animated.View>
+      </View>
     );
   };
 
@@ -429,7 +488,7 @@ const QuizMaker = () => {
             </TouchableOpacity>
             <TouchableOpacity 
               style={[styles.headerButton, { backgroundColor: COLORS.backgroundColor }]}
-              onPress={openScanQuizModal}
+              onPress={openScanModal}
             >
               <Ionicons name="scan" size={24} color={COLORS.accentColor} />
             </TouchableOpacity>
@@ -463,7 +522,6 @@ const QuizMaker = () => {
           scrollEventThrottle={16}
           ListHeaderComponent={<View style={{ height: 8 }} />}
           ListFooterComponent={<View style={{ height: 80 }} />}
-          ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
         />
       )}
 
@@ -487,7 +545,7 @@ const QuizMaker = () => {
       ]}>
         <TouchableOpacity 
           style={[styles.fab, { backgroundColor: COLORS.accentColor }]} 
-          onPress={openScanQuizModal}
+          onPress={openScanModal}
           activeOpacity={0.9}
         >
           <Ionicons name="scan" size={24} color={COLORS.textColor.white} />
@@ -501,6 +559,20 @@ const QuizMaker = () => {
         note={selectedQuiz}
         isScanNote={false}
         isQuiz={true}
+      />
+
+      <ImageScanModal
+        visible={scanModalVisible}
+        onClose={closeScanModal}
+        onImageProcessed={handleImageProcessed}
+        title="Scan for Quiz"
+        subtitle="Take a photo or choose from gallery to extract text for quiz generation"
+        actionButtonText="Generate Quiz"
+        actionButtonIcon="help-circle-outline"
+        accentColor={COLORS.accentColor}
+        onProcessImage={processScannedImage}
+        showExtractedText={true}
+        showActionButton={true}
       />
 
       <QuizGenerationModal
@@ -638,14 +710,16 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
     overflow: 'hidden',
+    marginBottom: 16,
   },
   quizContent: {
     padding: 20,
+    paddingBottom: 16,
   },
   quizHeader: {
     flexDirection: 'row',
@@ -661,16 +735,22 @@ const styles = StyleSheet.create({
   },
   quizTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '700',
     flex: 1,
+    lineHeight: 24,
   },
   answersBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 8,
     marginLeft: 8,
+  },
+  badgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    marginLeft: 4,
   },
   quizDate: {
     fontSize: 12,
@@ -680,6 +760,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     marginBottom: 16,
+    marginTop: 8,
   },
   quizFooter: {
     flexDirection: 'row',
@@ -704,16 +785,23 @@ const styles = StyleSheet.create({
   },
   quizActions: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    gap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
   },
   actionButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   errorBanner: {
     paddingHorizontal: 16,

@@ -1,19 +1,20 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Modal,
-  Platform,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Alert,
+    Modal,
+    Platform,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import { generateFlashCardsFromNotes } from '../services/geminiServices';
-import { addFlashCardSet, spendCredits } from '../services/historyStorage';
+import { addFlashCardSet } from '../services/historyStorage';
+import subscriptionService from '../services/subscriptionService';
 
 type CardType = 'term-definition' | 'question-answer';
 
@@ -51,11 +52,11 @@ export default function FlashCardGenerationModal({
       setIsGenerating(true);
       setProgress(10);
 
-      const hasEnoughCredits = await spendCredits(2);
-      if (!hasEnoughCredits) {
+      const creditResult = await subscriptionService.spendCredits(2);
+      if (!creditResult.success) {
         Alert.alert(
           "Out of Credits",
-          "You need at least 2 credits to generate flash cards.",
+          creditResult.error || "You need at least 2 credits to generate flash cards.",
           [
             { text: "Cancel", style: "cancel" },
             { text: "Get Credits", onPress: () => onClose() }

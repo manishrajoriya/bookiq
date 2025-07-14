@@ -3,26 +3,27 @@ import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useCallback, useRef, useState } from 'react';
 import {
-  ActionSheetIOS,
-  ActivityIndicator,
-  Alert,
-  Animated,
-  Dimensions,
-  FlatList,
-  Image,
-  Modal,
-  Platform,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  Vibration,
-  View
+    ActionSheetIOS,
+    ActivityIndicator,
+    Alert,
+    Animated,
+    Dimensions,
+    FlatList,
+    Image,
+    Modal,
+    Platform,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    Vibration,
+    View
 } from 'react-native';
 import { processImage } from '../services/geminiServices';
-import { addHistory, addScanNote, getAllScanNotes, spendCredits } from '../services/historyStorage';
+import { addHistory, addScanNote, getAllScanNotes } from '../services/historyStorage';
+import subscriptionService from '../services/subscriptionService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -232,7 +233,7 @@ const StudyNotes = () => {
       setScanState(prev => ({ ...prev, isProcessing: true, progress: 10 }));
       
       // Check credits first
-      const hasEnoughCredits = await spendCredits(1);
+      const hasEnoughCredits = await subscriptionService.spendCredits(1);
       if (!hasEnoughCredits) {
         return {
           success: false,

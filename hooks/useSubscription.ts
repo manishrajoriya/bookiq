@@ -8,7 +8,6 @@ interface SubscriptionState {
   expirationDate?: string;
   entitlements: string[];
   credits: {
-    local: number;
     online: number;
     total: number;
   };
@@ -20,7 +19,7 @@ export const useSubscription = () => {
   const [state, setState] = useState<SubscriptionState>({
     isSubscribed: false,
     entitlements: [],
-    credits: { local: 0, online: 0, total: 0 },
+    credits: { online: 0, total: 0 },
     loading: true
   });
 
@@ -36,7 +35,10 @@ export const useSubscription = () => {
       setState(prev => ({
         ...prev,
         ...subscriptionInfo,
-        credits,
+        credits: {
+          online: credits.online ?? 0,
+          total: credits.total ?? 0
+        },
         loading: false
       }));
     } catch (error) {
@@ -83,7 +85,10 @@ export const useSubscription = () => {
         const updatedCredits = await subscriptionService.getCurrentCredits();
         setState(prev => ({
           ...prev,
-          credits: updatedCredits
+          credits: {
+            online: updatedCredits.online ?? 0,
+            total: updatedCredits.total ?? 0
+          }
         }));
       }
       
@@ -116,7 +121,10 @@ export const useSubscription = () => {
   const refreshCredits = useCallback(async () => {
     try {
       const credits = await subscriptionService.getCurrentCredits();
-      setState(prev => ({ ...prev, credits }));
+      setState(prev => ({ ...prev, credits: {
+        online: credits.online ?? 0,
+        total: credits.total ?? 0
+      }}));
     } catch (error) {
       console.error('useSubscription: Failed to refresh credits:', error);
     }

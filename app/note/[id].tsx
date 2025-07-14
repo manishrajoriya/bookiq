@@ -3,7 +3,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useThemeColor } from '../../hooks/useThemeColor';
-import { addHistory, addNote, getNoteById, getQuizById, getScanNoteById, updateHistoryNote, updateNote, updateQuiz, updateScanNote } from '../../services/historyStorage';
+import { addHistory, addNote, getFlashCardSetById, getNoteById, getQuizById, getScanNoteById, updateFlashCardSet, updateHistoryNote, updateNote, updateQuiz, updateScanNote } from '../../services/historyStorage';
 
 export default function NoteDetailScreen() {
     const { id, isQuiz: isQuizParam } = useLocalSearchParams<{ id: string, isQuiz?: string }>();
@@ -11,6 +11,7 @@ export default function NoteDetailScreen() {
     const [title, setTitle] = useState('');
     const [content, setContent] = useState('');
     const [isScanNote, setIsScanNote] = useState(false);
+    const [isFlashCardSet, setIsFlashCardSet] = useState(false);
     const isNew = id === 'new';
     const isQuiz = isQuizParam === 'true';
 
@@ -31,17 +32,30 @@ export default function NoteDetailScreen() {
                         setContent(quiz.content);
                     }
                 } else {
-                    let note = await getScanNoteById(Number(id));
-                    if (note) {
-                        setIsScanNote(true);
-                        setTitle(note.title);
-                        setContent(note.content);
+                    // First try to load as flash card set
+                    let flashCardSet = await getFlashCardSetById(Number(id));
+                    if (flashCardSet) {
+                        setIsFlashCardSet(true);
+                        setIsScanNote(false);
+                        setTitle(flashCardSet.title);
+                        setContent(flashCardSet.content);
                     } else {
-                        note = await getNoteById(Number(id));
+                        // Then try scan note
+                        let note = await getScanNoteById(Number(id));
                         if (note) {
-                            setIsScanNote(false);
+                            setIsScanNote(true);
+                            setIsFlashCardSet(false);
                             setTitle(note.title);
                             setContent(note.content);
+                        } else {
+                            // Finally try regular note
+                            note = await getNoteById(Number(id));
+                            if (note) {
+                                setIsScanNote(false);
+                                setIsFlashCardSet(false);
+                                setTitle(note.title);
+                                setContent(note.content);
+                            }
                         }
                     }
                 }
@@ -63,6 +77,9 @@ export default function NoteDetailScreen() {
                 if (isQuiz) {
                     await updateQuiz(Number(id), title, content);
                     await addHistory('', 'quiz-updated', title, content);
+                } else if (isFlashCardSet) {
+                    await updateFlashCardSet(Number(id), title, content);
+                    await addHistory('', 'flash-card-set-updated', title, content);
                 } else if (isScanNote) {
                     await updateScanNote(Number(id), title, content);
                     await addHistory('', 'scan-notes-updated', title, content);
@@ -89,7 +106,7 @@ export default function NoteDetailScreen() {
                 </TouchableOpacity>
                 <View style={styles.headerContent}>
                     <Text style={[styles.headerTitle, { color: textColor }]}>
-                        {isNew ? 'New Note' : isQuiz ? 'Edit Quiz' : isScanNote ? 'Edit Scan Note' : 'Edit Note'}
+                        {isNew ? 'New Note' : isQuiz ? 'Edit Quiz' : isFlashCardSet ? 'Edit Flash Card Set' : isScanNote ? 'Edit Scan Note' : 'Edit Note'}
                     </Text>
                     {!isNew && isScanNote && (
                         <View style={[styles.scanNoteIndicator, { borderColor: iconColor }]}>
@@ -112,7 +129,7 @@ export default function NoteDetailScreen() {
                 />
                 <TextInput
                     style={[styles.contentInput, { color: textColor }]}
-                    placeholder={isQuiz ? "Edit your quiz questions and answers here..." : "Start writing your note here..."}
+                    placeholder={isQuiz ? "Edit your quiz questions and answers here..." : isFlashCardSet ? "Edit your flash card content here..." : "Start writing your note here..."}
                     placeholderTextColor={iconColor}
                     value={content}
                     onChangeText={setContent}

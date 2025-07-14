@@ -1,18 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
+import type { Session } from '@supabase/supabase-js';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
     Alert,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
     ScrollView,
     StyleSheet,
     Text,
-    TextInput,
     TouchableOpacity,
     View
 } from 'react-native';
+import AuthModal from '../../components/AuthModal';
 import { useThemeColor } from '../../hooks/useThemeColor';
 import { useThemeContext } from '../../providers/ThemeProvider';
 import {
@@ -20,9 +18,10 @@ import {
     getAllHistory,
     getAllNotes,
     getAllQuizzes,
-    getAllScanNotes,
-    getCredits
+    getAllScanNotes
 } from '../../services/historyStorage';
+import subscriptionService from '../../services/subscriptionService';
+import { supabase } from '../../utils/supabase';
 
 interface UserStats {
   problemsSolved: number;
@@ -83,16 +82,15 @@ const Profile = () => {
     flashCardsCreated: 0
   });
   const [loading, setLoading] = useState(false);
-  const [showProfileEdit, setShowProfileEdit] = useState(false);
-  const [newEmail, setNewEmail] = useState('');
-  const [newPassword, setNewPassword] = useState('');
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
 
   // Quick actions data
   const quickActions = [
     { id: 'study', icon: 'book-outline', title: 'Study Plans', route: '/study-notes' },
     { id: 'quiz', icon: 'help-circle-outline', title: 'Quiz Me', route: '/quiz-maker' },
     { id: 'flashcards', icon: 'card-outline', title: 'Flashcards', route: '/flash-cards' },
-    { id: 'notes', icon: 'document-text-outline', title: 'My Notes', route: '/notes' },
+    { id: 'notes', icon: 'document-text-outline', title: 'History', route: '/HistoryList' },
     { id: 'progress', icon: 'trending-up-outline', title: 'Progress', route: '/explore' },
     { id: 'achievements', icon: 'trophy-outline', title: 'Achievements', route: '/explore' },
   ];
@@ -108,14 +106,58 @@ const Profile = () => {
 
   useEffect(() => {
     loadUserData();
+    checkAuthStatus();
   }, []);
+
+  useEffect(() => {
+    console.log('showAuthModal state changed to:', showAuthModal);
+  }, [showAuthModal]);
+
+  const checkAuthStatus = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      setSession(session);
+    } catch (error) {
+      console.error('Error checking auth status:', error);
+    }
+  };
+
+  const handleGetCredits = async () => {
+    try {
+      // Check if user is authenticated
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      
+      if (!currentSession) {
+        // User is not authenticated, show auth modal
+        Alert.alert(
+          'Authentication Required',
+          'Please sign in to access credits and make purchases.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Sign In', onPress: () => setShowAuthModal(true) }
+          ]
+        );
+        return;
+      }
+      
+      // User is authenticated, proceed to credits page
+      router.push('/paywall');
+    } catch (error) {
+      console.error('Error checking authentication:', error);
+      Alert.alert(
+        'Error',
+        'Unable to verify authentication status. Please try again.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
 
   const loadUserData = async () => {
     setLoading(true);
     try {
-      // Load credits
-      const userCredits = await getCredits();
-      setCredits(userCredits);
+      // Load credits from online storage only
+      const creditData = await subscriptionService.getCurrentCredits();
+      setCredits(creditData.total);
 
       // Load all data to calculate stats
       const [history, notes, scanNotes, quizzes, flashCards] = await Promise.all([
@@ -159,6 +201,21 @@ const Profile = () => {
     }
   };
 
+  const handleAuthSuccess = (newSession: Session) => {
+    setSession(newSession);
+    setShowAuthModal(false);
+    // Reload user data after successful authentication
+    loadUserData();
+  };
+
+  const handleAccountSettingsPress = () => {
+    console.log('Account Settings button pressed');
+    console.log('Current showAuthModal state:', showAuthModal);
+    console.log('Current session:', session);
+    setShowAuthModal(true);
+    console.log('Set showAuthModal to true');
+  };
+
   const ProfileHeader = () => (
     <View style={[styles.profileHeader, { backgroundColor }]}>
       <View style={styles.headerBackground}>
@@ -166,7 +223,9 @@ const Profile = () => {
           {/* Avatar Section */}
           <View style={styles.avatarSection}>
             <View style={[styles.avatarContainer, { backgroundColor: colors.primary }]}>
-              <Text style={[styles.avatarText, { color: '#ffffff' }]}>U</Text>
+              <Text style={[styles.avatarText, { color: '#ffffff' }]}>
+                {session?.user?.email?.charAt(0).toUpperCase() || 'U'}
+              </Text>
               <View style={[styles.statusDot, { backgroundColor: colors.success }]} />
             </View>
           </View>
@@ -174,10 +233,10 @@ const Profile = () => {
           {/* User Info */}
           <View style={styles.userInfo}>
             <Text style={[styles.greeting, { color: textColor }]}>
-              Welcome back!
+              {session ? 'Welcome back!' : 'Welcome to BookIQ!'}
             </Text>
             <Text style={[styles.userEmail, { color: colors.iconSecondary }]}>
-              user@bookiq.app
+              {session?.user?.email || 'user@bookiq.app'}
             </Text>
             
             {/* Credits Display */}
@@ -216,7 +275,7 @@ const Profile = () => {
             </TouchableOpacity>
             <TouchableOpacity 
               style={[styles.iconButton, { backgroundColor: colors.cardSecondary }]}
-              onPress={() => router.push('/paywall')}
+              onPress={handleGetCredits}
             >
               <Ionicons name="settings-outline" size={20} color={colors.iconPrimary} />
             </TouchableOpacity>
@@ -227,16 +286,20 @@ const Profile = () => {
         <View style={styles.actionButtons}>
           <TouchableOpacity 
             style={[styles.primaryButton, { backgroundColor: colors.primary }]}
-            onPress={() => setShowProfileEdit(true)}
+            onPress={handleAccountSettingsPress}
+            activeOpacity={0.8}
           >
-            <Text style={styles.buttonText}>Edit Profile</Text>
+            <Text style={styles.buttonText}>
+              {session ? 'Account Settings' : 'Sign In'}
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={[styles.secondaryButton, { 
               backgroundColor: colors.surface,
               borderColor: colors.border
             }]}
-            onPress={() => router.push('/paywall')}
+            onPress={handleGetCredits}
+            activeOpacity={0.8}
           >
             <Text style={[styles.buttonTextSecondary, { color: textColor }]}>Get Credits</Text>
           </TouchableOpacity>
@@ -396,69 +459,7 @@ const Profile = () => {
     </View>
   );
 
-  const ProfileEditModal = () => (
-    <Modal visible={showProfileEdit} transparent animationType="slide">
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalContainer}>
-        <View style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
-          <View style={[styles.modalContent, { 
-            backgroundColor: colors.card
-          }]}>
-            <Text style={[styles.modalTitle, { color: textColor }]}>Edit Profile</Text>
-            
-                          <TextInput
-                style={[styles.input, { 
-                  backgroundColor: colors.cardSecondary,
-                  borderColor: colors.border,
-                  color: textColor
-                }]}
-                placeholder="New Email"
-                placeholderTextColor={colors.iconSecondary}
-                value={newEmail}
-                onChangeText={setNewEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-              
-              <TextInput
-                style={[styles.input, { 
-                  backgroundColor: colors.cardSecondary,
-                  borderColor: colors.border,
-                  color: textColor
-                }]}
-                placeholder="New Password"
-                placeholderTextColor={colors.iconSecondary}
-                value={newPassword}
-                onChangeText={setNewPassword}
-                secureTextEntry
-              />
-            
-            <TouchableOpacity 
-              style={[styles.modalButton, { backgroundColor: colors.primary }]}
-              onPress={() => {
-                Alert.alert('Success', 'Profile updated successfully!');
-                setShowProfileEdit(false);
-                setNewEmail('');
-                setNewPassword('');
-              }}
-            >
-              <Text style={styles.modalButtonText}>Save Changes</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.closeButton}
-              onPress={() => {
-                setShowProfileEdit(false);
-                setNewEmail('');
-                setNewPassword('');
-              }}
-            >
-              <Text style={[styles.closeText, { color: colors.iconSecondary }]}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
-  );
+
 
   return (
     <View style={[styles.container, { backgroundColor }]}>
@@ -474,7 +475,14 @@ const Profile = () => {
         <StudyStreakSection />
       </ScrollView>
       
-      <ProfileEditModal />
+      <AuthModal 
+        visible={showAuthModal}
+        onClose={() => {
+          console.log('AuthModal closing');
+          setShowAuthModal(false);
+        }}
+        onAuthSuccess={handleAuthSuccess}
+      />
     </View>
   );
 };
@@ -799,55 +807,6 @@ const styles = StyleSheet.create({
   },
   progressText: {
     fontSize: 12,
-  },
-  
-  // Modal
-  modalContainer: {
-    flex: 1,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    width: '90%',
-    borderRadius: 20,
-    padding: 24,
-  },
-  modalTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  input: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 16,
-    fontSize: 16,
-  },
-  modalButton: {
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  modalButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  closeButton: {
-    paddingVertical: 8,
-    alignItems: 'center',
-  },
-  closeText: {
-    fontSize: 16,
-    fontWeight: '500',
   },
 });
 

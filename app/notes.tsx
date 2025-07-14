@@ -18,6 +18,7 @@ import {
 import EnhanceNotesModal from '../components/EnhanceNotesModal';
 import FlashCardGenerationModal from '../components/FlashCardGenerationModal';
 import FlashCardViewer from '../components/FlashCardViewer';
+import NoteChatModal from '../components/NoteChatModal';
 import NoteReaderModal from '../components/NoteReaderModal';
 import QuizGenerationModal from '../components/QuizGenerationModal';
 import { useThemeContext } from '../providers/ThemeProvider';
@@ -54,6 +55,8 @@ export default function NotesScreen() {
     const [isSearchFocused, setIsSearchFocused] = useState(false);
     const [enhanceModalVisible, setEnhanceModalVisible] = useState(false);
     const [enhanceTargetNote, setEnhanceTargetNote] = useState<Note | null>(null);
+    const [chatModalVisible, setChatModalVisible] = useState(false);
+    const [chatTargetNote, setChatTargetNote] = useState<Note | null>(null);
     const router = useRouter();
 
     // Theme context
@@ -158,6 +161,16 @@ export default function NotesScreen() {
             await loadNotes();
         }
         closeEnhanceModal();
+    };
+
+    const openChatModal = (note: Note) => {
+        setChatTargetNote(note);
+        setChatModalVisible(true);
+    };
+
+    const closeChatModal = () => {
+        setChatModalVisible(false);
+        setChatTargetNote(null);
     };
 
     const parseFlashCards = (content: string): { front: string; back: string }[] => {
@@ -274,6 +287,14 @@ export default function NotesScreen() {
                         onPress={() => openFlashCardModal(item)}
                     >
                         <Ionicons name="albums" size={18} color={COLORS.successColor} />
+                    </TouchableOpacity>
+                    
+                    {/* Chat with Note Button */}
+                    <TouchableOpacity 
+                        style={[styles.actionButton, { backgroundColor: COLORS.backgroundColor }]}
+                        onPress={() => openChatModal(item)}
+                    >
+                        <Ionicons name="chatbubble-outline" size={18} color={COLORS.primary} />
                     </TouchableOpacity>
                     
                     {/* Enhance Notes Button */}
@@ -444,6 +465,14 @@ export default function NotesScreen() {
                 sourceTitle={enhanceTargetNote?.title || ''}
                 sourceId={enhanceTargetNote?.id}
                 onNoteEnhanced={handleNoteEnhanced}
+            />
+
+            <NoteChatModal
+                visible={chatModalVisible}
+                onClose={closeChatModal}
+                noteTitle={chatTargetNote?.title || ''}
+                noteContent={chatTargetNote?.content || ''}
+                accentColor={COLORS.accentColor}
             />
         </SafeAreaView>
     );

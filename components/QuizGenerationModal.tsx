@@ -15,7 +15,8 @@ import {
 } from 'react-native';
 import { useThemeColor } from '../hooks/useThemeColor';
 import { generateQuizFromNotes } from '../services/geminiServices';
-import { addHistory, addQuiz, spendCredits } from '../services/historyStorage';
+import { addHistory, addQuiz } from '../services/historyStorage';
+import subscriptionService from '../services/subscriptionService';
 
 type QuizType = 'multiple-choice' | 'true-false' | 'fill-blank';
 
@@ -75,11 +76,11 @@ export default function QuizGenerationModal({
         try {
             setQuizState(prev => ({ ...prev, isGenerating: true }));
 
-            const hasEnoughCredits = await spendCredits(2);
-            if (!hasEnoughCredits) {
+            const creditResult = await subscriptionService.spendCredits(2);
+            if (!creditResult.success) {
                 Alert.alert(
                     "Out of Credits",
-                    "You need at least 2 credits to generate a quiz.",
+                    creditResult.error || "You need at least 2 credits to generate a quiz.",
                     [
                         { text: "Cancel", style: "cancel" },
                         { text: "Get Credits", onPress: () => router.push('/paywall') }
