@@ -13,7 +13,7 @@ const getUserEmail = async () => {
 };
 
 // Helper to check if user is authenticated
-const checkAuth = async () => {
+export const checkAuth = async () => {
   const userId = await getUserId();
   if (!userId) {
     throw new Error('Not authenticated');
@@ -654,25 +654,42 @@ export const isPurchaseProcessedOnline = async (transactionId: string): Promise<
  */
 export const markPurchaseAsProcessedOnline = async (transactionId: string): Promise<void> => {
   const userId = await checkAuth();
-  
   try {
     const { error } = await supabase
       .from('purchases')
       .update({ 
         status: 'completed',
-        processed_at: new Date().toISOString()
+        processed_at: new Date().toISOString(),
+        credit_status: 'added'
       })
       .eq('user_id', userId)
       .eq('transaction_id', transactionId);
-    
     if (error) {
       console.error('Error marking purchase as processed:', error);
       throw error;
     }
-    
     console.log(`Purchase marked as processed: ${transactionId}`);
   } catch (error) {
     console.error('Error in markPurchaseAsProcessedOnline:', error);
+    throw error;
+  }
+};
+
+export const markPurchaseAsRestored = async (transactionId: string): Promise<void> => {
+  const userId = await checkAuth();
+  try {
+    const { error } = await supabase
+      .from('purchases')
+      .update({ restored: true, processed_at: new Date().toISOString(), credit_status: 'restored' })
+      .eq('user_id', userId)
+      .eq('transaction_id', transactionId);
+    if (error) {
+      console.error('Error marking purchase as restored:', error);
+      throw error;
+    }
+    console.log(`Purchase marked as restored: ${transactionId}`);
+  } catch (error) {
+    console.error('Error in markPurchaseAsRestored:', error);
     throw error;
   }
 };

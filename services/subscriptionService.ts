@@ -1,15 +1,17 @@
 import { Platform } from 'react-native';
 import Purchases, { CustomerInfo, PurchasesOffering, PurchasesPackage } from 'react-native-purchases';
 import {
-    addExpiringCreditsOnline,
-    getCreditsOnline,
-    getRestorationStatsOnline,
-    isPurchaseProcessedOnline,
-    isTransactionRestoredOnline,
-    markPurchaseAsProcessedOnline,
-    spendCreditsOnline,
-    trackCreditRestorationOnline,
-    trackPurchaseOnline
+  addExpiringCreditsOnline,
+  checkAuth,
+  getCreditsOnline,
+  getRestorationStatsOnline,
+  isPurchaseProcessedOnline,
+  isTransactionRestoredOnline,
+  markPurchaseAsProcessedOnline,
+  markPurchaseAsRestored,
+  spendCreditsOnline,
+  trackCreditRestorationOnline,
+  trackPurchaseOnline
 } from './onlineStorage';
 
 // Credit mapping for different subscription plans
@@ -79,93 +81,87 @@ class SubscriptionService {
   async purchasePackage(pack: PurchasesPackage): Promise<{ success: boolean; credits?: number; error?: string; isPending?: boolean }> {
     try {
       console.log('SubscriptionService: Purchasing package:', pack.identifier);
-      
       // Attempt the purchase
       const { customerInfo } = await Purchases.purchasePackage(pack);
       console.log('SubscriptionService: Purchase successful, customer info updated');
-      
       const productId = pack.product.identifier.toLowerCase();
       console.log('SubscriptionService: Product ID:', productId);
-      
-      // Get transaction ID from the purchase
-      const transactionId = customerInfo.nonSubscriptionTransactions?.[0]?.transactionIdentifier || 
-                           `purchase_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
-      // Track the purchase
-      try {
-        await trackPurchaseOnline(
-          productId,
-          new Date().toISOString(),
-          transactionId,
-          pack.product.price,
-          pack.product.currencyCode || 'INR',
-          'completed'
-        );
-      } catch (trackError) {
-        console.error('SubscriptionService: Failed to track purchase:', trackError);
-        // Don't fail the purchase if tracking fails
-      }
-      
-      // Get credits for this plan
       const creditsToAdd = PLAN_CREDITS[productId] || 0;
       const durationDays = PLAN_DURATION[productId] || 30;
-      
-      console.log('SubscriptionService: Credits to add:', creditsToAdd, 'Duration days:', durationDays);
-      
-      if (creditsToAdd > 0) {
-        try {
-          // Check if this transaction has already been processed
-          const alreadyProcessed = await isPurchaseProcessedOnline(transactionId);
-          if (alreadyProcessed) {
-            console.log('SubscriptionService: Transaction already processed, skipping credit addition');
-            return {
-              success: true,
-              credits: 0,
-              error: 'Credits already added for this purchase'
-            };
-          }
-          
-          // Calculate expiration date
+      if (creditsToAdd <= 0) {
+        console.log('SubscriptionService: No credits to add for this plan');
+        return { success: true };
+      }
+      // Log all nonSubscriptionTransactions for debugging
+      const allTxns = customerInfo.nonSubscriptionTransactions || [];
+      console.log('All nonSubscriptionTransactions for this product:',
+        allTxns.map(t => ({
+          transactionIdentifier: t.transactionIdentifier,
+          productIdentifier: t.productIdentifier,
+          purchaseDate: t.purchaseDate
+        }))
+      );
+      // Process all unprocessed nonSubscriptionTransactions for this product
+      const transactions = allTxns.filter(t => t.productIdentifier.toLowerCase() === productId);
+      if (transactions.length === 0) {
+        // Fallback: try to process the latest transaction as before
+        const fallbackTransactionId = `purchase_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const alreadyProcessed = await isPurchaseProcessedOnline(fallbackTransactionId);
+        if (!alreadyProcessed) {
           const expirationDate = new Date();
           expirationDate.setDate(expirationDate.getDate() + durationDays);
-          
-          console.log('SubscriptionService: Adding credits with expiration:', expirationDate.toISOString());
-          
-          // Add credits to online storage only
           await addExpiringCreditsOnline(creditsToAdd, expirationDate.toISOString());
-          console.log('SubscriptionService: Credits added to online storage successfully');
-          
-          // Mark purchase as processed
-          try {
-            await markPurchaseAsProcessedOnline(transactionId);
-          } catch (markError) {
-            console.error('SubscriptionService: Failed to mark purchase as processed:', markError);
+          await markPurchaseAsProcessedOnline(fallbackTransactionId);
+          await trackCreditRestorationOnline(productId, fallbackTransactionId, creditsToAdd, creditsToAdd, 'initial_purchase', 'success');
+          console.log('Credited fallback transaction:', fallbackTransactionId);
+          return { success: true, credits: creditsToAdd };
+        } else {
+          console.log('Fallback transaction already processed:', fallbackTransactionId);
+          return { success: true, credits: 0, error: 'Credits already added for this purchase' };
+        }
+      }
+      let totalCreditsAdded = 0;
+      let errors: string[] = [];
+      for (const txn of transactions) {
+        const transactionId = txn.transactionIdentifier;
+        console.log('Processing transaction:', transactionId, 'purchaseDate:', txn.purchaseDate);
+        try {
+          const alreadyProcessed = await isPurchaseProcessedOnline(transactionId);
+          if (alreadyProcessed) {
+            console.log('Transaction already processed, skipping:', transactionId);
+            continue;
           }
-          
-          // Track the credit restoration
+          // Track the purchase (for each transaction)
           try {
-            await trackCreditRestorationOnline(
+            await trackPurchaseOnline(
               productId,
+              txn.purchaseDate || new Date().toISOString(),
               transactionId,
-              creditsToAdd,
-              creditsToAdd,
-              'initial_purchase',
-              'success'
+              pack.product.price,
+              pack.product.currencyCode || 'INR',
+              'completed'
             );
-          } catch (restoreTrackError) {
-            console.error('SubscriptionService: Failed to track credit restoration:', restoreTrackError);
+            console.log('Tracked purchase for transaction:', transactionId);
+          } catch (trackError) {
+            console.error('Failed to track purchase for transaction:', transactionId, trackError);
           }
-          
-          console.log(`SubscriptionService: Successfully added ${creditsToAdd} credits expiring on ${expirationDate.toISOString()}`);
-          
-          return {
-            success: true,
-            credits: creditsToAdd
-          };
+          const expirationDate = new Date();
+          expirationDate.setDate(expirationDate.getDate() + durationDays);
+          await addExpiringCreditsOnline(creditsToAdd, expirationDate.toISOString());
+          await markPurchaseAsProcessedOnline(transactionId);
+          await trackCreditRestorationOnline(
+            productId,
+            transactionId,
+            creditsToAdd,
+            creditsToAdd,
+            'initial_purchase',
+            'success'
+          );
+          totalCreditsAdded += creditsToAdd;
+          console.log(`Successfully added ${creditsToAdd} credits for transaction ${transactionId}`);
         } catch (creditError: any) {
-          console.error('SubscriptionService: Failed to add credits:', creditError);
-          
-          // Track failed restoration
+          console.error('Failed to add credits for transaction', transactionId, creditError);
+          errors.push(transactionId);
           try {
             await trackCreditRestorationOnline(
               productId,
@@ -176,34 +172,23 @@ class SubscriptionService {
               'failed'
             );
           } catch (restoreTrackError) {
-            console.error('SubscriptionService: Failed to track failed restoration:', restoreTrackError);
+            console.error('Failed to track failed restoration:', restoreTrackError);
           }
-          
-          // Purchase was successful but credit addition failed
-          // This is a partial success - we should still return success but warn about credits
-          return {
-            success: true,
-            credits: 0,
-            error: 'Purchase successful but failed to add credits. Please contact support.'
-          };
         }
       }
-      
-      console.log('SubscriptionService: No credits to add for this plan');
-      return { success: true };
-      
+      if (totalCreditsAdded > 0) {
+        return { success: true, credits: totalCreditsAdded, error: errors.length ? `Some transactions failed: ${errors.join(', ')}` : undefined };
+      } else {
+        return { success: true, credits: 0, error: errors.length ? `All transactions failed: ${errors.join(', ')}` : 'Credits already added for this purchase' };
+      }
     } catch (error: any) {
-      console.error('SubscriptionService: Purchase failed:', error);
-      
-      // Handle different types of purchase errors
+      console.error('Purchase failed:', error);
       if (error.userCancelled || error.code === 'USER_CANCELED') {
         return { success: false, error: 'Purchase cancelled' };
       }
-      
       if (error.code === 'PURCHASE_NOT_ALLOWED_ERROR') {
         return { success: false, error: 'Purchases are not allowed on this device. Please check your device settings.' };
       }
-      
       if (error.code === 'PAYMENT_PENDING_ERROR') {
         return { 
           success: false, 
@@ -211,24 +196,18 @@ class SubscriptionService {
           isPending: true 
         };
       }
-      
       if (error.code === 'PRODUCT_NOT_AVAILABLE_FOR_PURCHASE_ERROR') {
         return { success: false, error: 'This subscription is currently unavailable. Please try again later.' };
       }
-      
       if (error.code === 'PRODUCT_ALREADY_PURCHASED_ERROR') {
         return { success: false, error: 'You already own this item. Please try restoring your purchases.' };
       }
-      
       if (error.code === 'RECEIPT_IN_USE_BY_OTHER_SUBSCRIBER_ERROR') {
         return { success: false, error: 'This purchase is linked to another user account. Please login to that account or contact support.' };
       }
-      
       if (error.code === 'NETWORK_ERROR' || error.message?.includes('network')) {
         return { success: false, error: 'Network error. Please check your connection and try again.' };
       }
-      
-      // Generic error
       return { success: false, error: error.message || 'Purchase failed. Please try again.' };
     }
   }
@@ -301,6 +280,44 @@ class SubscriptionService {
     // Credits are added immediately upon purchase
     console.log('SubscriptionService: Restore not applicable for one-time purchases');
     return { restored: 0, errors: 0 };
+  }
+
+  /**
+   * Restore credits for a single transaction (fraud protection)
+   */
+  async restoreCreditsForTransaction(transactionId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const userId = await checkAuth();
+      const { data, error } = await (await import('../utils/supabase')).supabase
+        .from('purchases')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('transaction_id', transactionId)
+        .single();
+      if (error || !data) {
+        return { success: false, error: 'Purchase not found' };
+      }
+      if (data.status !== 'completed') {
+        return { success: false, error: 'Payment not completed yet' };
+      }
+      // Only allow restore if both processed_at is null, restored is false, and credit_status is 'none'
+      if (data.processed_at || data.restored || data.credit_status !== 'none') {
+        return { success: false, error: 'Credits already restored or added for this transaction' };
+      }
+      const productId = data.product_id.toLowerCase();
+      const creditsToAdd = PLAN_CREDITS[productId] || 0;
+      const durationDays = PLAN_DURATION[productId] || 30;
+      if (creditsToAdd <= 0) {
+        return { success: false, error: 'No credits to add for this plan' };
+      }
+      const expirationDate = new Date();
+      expirationDate.setDate(expirationDate.getDate() + durationDays);
+      await addExpiringCreditsOnline(creditsToAdd, expirationDate.toISOString());
+      await markPurchaseAsRestored(transactionId);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Restore failed' };
+    }
   }
 
   /**

@@ -58,11 +58,11 @@ const Explore = () => {
        // { name: 'Calculator', icon: 'calculator-outline', color: '#764ba2', bgColor: '#f5f0ff', feature: 'calculator' },
         { name: 'Quiz Maker', icon: 'help-circle-outline', color: '#f093fb', bgColor: '#fef0ff', feature: 'quiz-maker' },
         { name: 'Flash Cards', icon: 'albums-outline', color: '#43e97b', bgColor: '#f0fff4', feature: 'flash-cards' },
+        { name: 'Mind Maps', icon: 'git-network-outline', color: '#96ceb4', bgColor: '#f9fff9', feature: 'mind-maps' },
         { name: 'Homework', icon: 'book-outline', color: '#fa709a', bgColor: '#fff0f5', feature: 'homework' },
         { name: 'Magic Eraser', icon: 'sparkles-outline', color: '#ff6b6b', bgColor: '#fff0f0', feature: 'magic-eraser' },
        // { name: 'Voice Notes', icon: 'mic-outline', color: '#4ecdc4', bgColor: '#f0fffe', feature: 'voice-notes' },
        // { name: 'PDF Scanner', icon: 'document-outline', color: '#45b7d1', bgColor: '#f0f9ff', feature: 'pdf-scanner' },
-        { name: 'Mind Maps', icon: 'git-network-outline', color: '#96ceb4', bgColor: '#f9fff9', feature: 'mind-maps' },
        // { name: 'Translator', icon: 'language-outline', color: '#ff9ff3', bgColor: '#fff0fe', feature: 'translator' },
     ];
 

@@ -3,25 +3,26 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Animated,
-  Dimensions,
-  FlatList,
-  Platform,
-  SafeAreaView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  Vibration,
-  View
+    ActivityIndicator,
+    Alert,
+    Animated,
+    Dimensions,
+    FlatList,
+    Platform,
+    SafeAreaView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    Vibration,
+    View
 } from 'react-native';
 import AppendScanModal from '../components/AppendScanModal';
 import EnhanceNotesModal from '../components/EnhanceNotesModal';
 import FlashCardGenerationModal from '../components/FlashCardGenerationModal';
 import ImageScanModal from '../components/ImageScanModal';
+import MindMapGenerationModal from '../components/MindMapGenerationModal';
 import NoteChatModal from '../components/NoteChatModal';
 import NoteReaderModal from '../components/NoteReaderModal';
 import QuizGenerationModal from '../components/QuizGenerationModal';
@@ -129,6 +130,10 @@ const StudyNotes = () => {
   // Chat modal state
   const [chatModalVisible, setChatModalVisible] = useState(false);
   const [chatTargetNote, setChatTargetNote] = useState<ScanNote | null>(null);
+
+  // Mind map generation modal state
+  const [mindMapModalVisible, setMindMapModalVisible] = useState(false);
+  const [mindMapTargetNote, setMindMapTargetNote] = useState<ScanNote | null>(null);
 
   // Enhanced error handling
   const handleError = (type: ErrorState['type'], message: string, retryable: boolean = true, code?: string) => {
@@ -350,6 +355,20 @@ const StudyNotes = () => {
     setChatTargetNote(null);
   };
 
+  const openMindMapModal = (note: ScanNote) => {
+    setMindMapTargetNote(note);
+    setMindMapModalVisible(true);
+  };
+
+  const closeMindMapModal = () => {
+    setMindMapModalVisible(false);
+    setMindMapTargetNote(null);
+  };
+
+  const handleMindMapSaved = () => {
+    loadNotes();
+  };
+
   const handleSearchFocus = () => {
     setIsSearchFocused(true);
     Animated.timing(searchAnim, {
@@ -477,6 +496,13 @@ const StudyNotes = () => {
             onPress={() => openChatModal(item)}
           >
             <Ionicons name="chatbubble-outline" size={20} color={COLORS.primary} />
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.actionButton, { backgroundColor: COLORS.backgroundColor }]}
+            onPress={() => openMindMapModal(item)}
+          >
+            <Ionicons name="git-network-outline" size={20} color={COLORS.primary} />
           </TouchableOpacity>
           
           <TouchableOpacity 
@@ -718,6 +744,17 @@ const StudyNotes = () => {
         noteTitle={chatTargetNote?.title || ''}
         noteContent={chatTargetNote?.content || ''}
         accentColor={COLORS.accentColor}
+      />
+
+      {/* Mind Map Generation Modal */}
+      <MindMapGenerationModal
+        visible={mindMapModalVisible}
+        onClose={closeMindMapModal}
+        sourceContent={mindMapTargetNote?.content || ''}
+        sourceTitle={mindMapTargetNote?.title || ''}
+        sourceId={mindMapTargetNote?.id}
+        sourceType="scan-note"
+        onMindMapSaved={handleMindMapSaved}
       />
     </SafeAreaView>
   );

@@ -809,6 +809,11 @@ const PayWallModel = () => {
   const slideAnim = useRef(new Animated.Value(50)).current;
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
 
+  // Restore any missing/delayed credits on mount
+  useEffect(() => {
+    subscriptionService.verifyAndRestoreCredits();
+  }, []);
+
   useEffect(() => {
     fetchData();
     startAnimations();

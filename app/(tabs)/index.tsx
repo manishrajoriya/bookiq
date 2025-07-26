@@ -15,7 +15,8 @@ import AIAnswerModal from '../../components/AIAnswerModal';
 import ImageScanModal from '../../components/ImageScanModal';
 import { useThemeContext } from '../../providers/ThemeProvider';
 import { getAnswerFromGemini, processImage } from '../../services/geminiServices';
-import { addHistory, spendCredits } from '../../services/historyStorage';
+import { addHistory } from '../../services/historyStorage';
+import subscriptionService from '../../services/subscriptionService';
 
 // Dynamic color scheme based on theme
 const getColors = (isDark: boolean) => ({
@@ -59,7 +60,7 @@ const Index = () => {
     }
 
     try {
-      const hasEnoughCredits = await spendCredits(1);
+      const hasEnoughCredits = await subscriptionService.spendCredits(1);
       if (!hasEnoughCredits) {
         Alert.alert(
           "Out of Credits",
@@ -89,7 +90,7 @@ const Index = () => {
 
   const handleProcessImage = async (uri: string): Promise<string> => {
     try {
-      const hasEnoughCredits = await spendCredits(1);
+      const hasEnoughCredits = await subscriptionService.spendCredits(1);
       if (!hasEnoughCredits) {
         throw new Error('You need at least 1 credit to scan an image. Please get more credits to continue.');
       }

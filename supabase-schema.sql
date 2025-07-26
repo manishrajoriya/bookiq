@@ -94,7 +94,9 @@ CREATE TABLE IF NOT EXISTS purchases (
     status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed')),
     processed_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    restored BOOLEAN DEFAULT FALSE,
+    credit_status TEXT DEFAULT 'none' CHECK (credit_status IN ('none', 'added', 'restored'))
 );
 
 -- Table for tracking credit restoration attempts

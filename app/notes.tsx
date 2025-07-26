@@ -18,6 +18,7 @@ import {
 import EnhanceNotesModal from '../components/EnhanceNotesModal';
 import FlashCardGenerationModal from '../components/FlashCardGenerationModal';
 import FlashCardViewer from '../components/FlashCardViewer';
+import MindMapGenerationModal from '../components/MindMapGenerationModal';
 import NoteChatModal from '../components/NoteChatModal';
 import NoteReaderModal from '../components/NoteReaderModal';
 import QuizGenerationModal from '../components/QuizGenerationModal';
@@ -57,6 +58,8 @@ export default function NotesScreen() {
     const [enhanceTargetNote, setEnhanceTargetNote] = useState<Note | null>(null);
     const [chatModalVisible, setChatModalVisible] = useState(false);
     const [chatTargetNote, setChatTargetNote] = useState<Note | null>(null);
+    const [mindMapModalVisible, setMindMapModalVisible] = useState(false);
+    const [mindMapTargetNote, setMindMapTargetNote] = useState<Note | null>(null);
     const router = useRouter();
 
     // Theme context
@@ -171,6 +174,18 @@ export default function NotesScreen() {
     const closeChatModal = () => {
         setChatModalVisible(false);
         setChatTargetNote(null);
+    };
+
+    const openMindMapModal = (note: Note) => {
+        setMindMapTargetNote(note);
+        setMindMapModalVisible(true);
+    };
+    const closeMindMapModal = () => {
+        setMindMapModalVisible(false);
+        setMindMapTargetNote(null);
+    };
+    const handleMindMapSaved = () => {
+        loadNotes();
     };
 
     const parseFlashCards = (content: string): { front: string; back: string }[] => {
@@ -313,6 +328,13 @@ export default function NotesScreen() {
                             <Ionicons name="play" size={18} color={COLORS.textColor.white} />
                         </TouchableOpacity>
                     )}
+                    
+                    <TouchableOpacity 
+                        style={[styles.actionButton, { backgroundColor: COLORS.backgroundColor }]} 
+                        onPress={() => openMindMapModal(item)}
+                    >
+                        <Ionicons name="git-network-outline" size={18} color={COLORS.primary} />
+                    </TouchableOpacity>
                     
                     <TouchableOpacity 
                         style={[styles.actionButton, { backgroundColor: COLORS.backgroundColor }]}
@@ -473,6 +495,16 @@ export default function NotesScreen() {
                 noteTitle={chatTargetNote?.title || ''}
                 noteContent={chatTargetNote?.content || ''}
                 accentColor={COLORS.accentColor}
+            />
+
+            <MindMapGenerationModal
+                visible={mindMapModalVisible}
+                onClose={closeMindMapModal}
+                sourceContent={mindMapTargetNote?.content || ''}
+                sourceTitle={mindMapTargetNote?.title || ''}
+                sourceId={mindMapTargetNote?.id}
+                sourceType="note"
+                onMindMapSaved={handleMindMapSaved}
             />
         </SafeAreaView>
     );

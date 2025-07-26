@@ -17,6 +17,7 @@ export const initDatabase = async () => {
     await initScanNotesTable();
     await initQuizTable();
     await initFlashCardSetTable();
+    await initMindMapTable(); // Added for mind maps
     await migrateDatabase();
     console.log("DATABASE: All tables initialized.");
 };
@@ -308,6 +309,131 @@ export const deleteQuiz = async (id: number) => {
     await localDb.runAsync("DELETE FROM quiz_maker WHERE id = ?;", [id]);
 };
 
+// --- Flash Card Sets ---
+export interface FlashCardSet {
+    id: number;
+    title: string;
+    content: string;
+    card_type: string;
+    source_note_id?: number;
+    source_note_type?: string;
+    createdAt: string;
+}
+
+export const initFlashCardSetTable = async () => {
+    const localDb = await getDb();
+    await localDb.execAsync(
+      "CREATE TABLE IF NOT EXISTS flash_card_sets (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, content TEXT, card_type TEXT, source_note_id INTEGER, source_note_type TEXT, createdAt TEXT);"
+    );
+};
+
+export const addFlashCardSet = async (
+  title: string, 
+  content: string,
+  cardType: string,
+  sourceNoteId?: number,
+  sourceNoteType?: 'note' | 'scan-note'
+): Promise<number> => {
+    const localDb = await getDb();
+    const result = await localDb.runAsync(
+      "INSERT INTO flash_card_sets (title, content, card_type, source_note_id, source_note_type, createdAt) VALUES (?, ?, ?, ?, ?, ?);",
+      [title, content, cardType, sourceNoteId ?? null, sourceNoteType ?? null, new Date().toISOString()]
+    );
+    return result.lastInsertRowId;
+};
+
+export const getAllFlashCardSets = async (): Promise<FlashCardSet[]> => {
+    const localDb = await getDb();
+    try {
+      const result = await localDb.getAllAsync("SELECT * FROM flash_card_sets ORDER BY createdAt DESC;");
+      return (result as FlashCardSet[]) ?? [];
+    } catch (error) {
+      console.warn("Could not get flash card sets.", error);
+      return [];
+    }
+};
+
+export const getFlashCardSetById = async (id: number): Promise<FlashCardSet | null> => {
+    const localDb = await getDb();
+    const result = await localDb.getFirstAsync("SELECT * FROM flash_card_sets WHERE id = ?;", [id]);
+    return result as FlashCardSet | null;
+};
+
+export const updateFlashCardSet = async (id: number, title: string, content: string) => {
+    const localDb = await getDb();
+    await localDb.runAsync("UPDATE flash_card_sets SET title = ?, content = ? WHERE id = ?;", [title, content, id]);
+};
+
+export const deleteFlashCardSet = async (id: number) => {
+    const localDb = await getDb();
+    await localDb.runAsync("DELETE FROM flash_card_sets WHERE id = ?;", [id]);
+};
+
+// --- Mind Maps ---
+export interface MindMap {
+    id: number;
+    title: string;
+    content: string; // Mind map outline or data (could be JSON or text)
+    source_note_id?: number;
+    source_note_type?: string;
+    createdAt: string;
+}
+
+export const initMindMapTable = async () => {
+    const localDb = await getDb();
+    await localDb.execAsync(
+      `CREATE TABLE IF NOT EXISTS mind_maps (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT,
+        content TEXT,
+        source_note_id INTEGER,
+        source_note_type TEXT,
+        createdAt TEXT
+      );`
+    );
+};
+
+export const addMindMap = async (
+  title: string,
+  content: string,
+  sourceNoteId?: number,
+  sourceNoteType?: 'note' | 'scan-note'
+): Promise<number> => {
+    const localDb = await getDb();
+    const result = await localDb.runAsync(
+      "INSERT INTO mind_maps (title, content, source_note_id, source_note_type, createdAt) VALUES (?, ?, ?, ?, ?);",
+      [title, content, sourceNoteId ?? null, sourceNoteType ?? null, new Date().toISOString()]
+    );
+    return result.lastInsertRowId;
+};
+
+export const getAllMindMaps = async (): Promise<MindMap[]> => {
+    const localDb = await getDb();
+    try {
+      const result = await localDb.getAllAsync("SELECT * FROM mind_maps ORDER BY createdAt DESC;");
+      return (result as MindMap[]) ?? [];
+    } catch (error) {
+      console.warn("Could not get mind maps.", error);
+      return [];
+    }
+};
+
+export const getMindMapById = async (id: number): Promise<MindMap | null> => {
+    const localDb = await getDb();
+    const result = await localDb.getFirstAsync("SELECT * FROM mind_maps WHERE id = ?;", [id]);
+    return result as MindMap | null;
+};
+
+export const updateMindMap = async (id: number, title: string, content: string) => {
+    const localDb = await getDb();
+    await localDb.runAsync("UPDATE mind_maps SET title = ?, content = ? WHERE id = ?;", [title, content, id]);
+};
+
+export const deleteMindMap = async (id: number) => {
+    const localDb = await getDb();
+    await localDb.runAsync("DELETE FROM mind_maps WHERE id = ?;", [id]);
+};
+
 export const resetDatabase = async () => {
   const localDb = await getDb();
   try {
@@ -316,6 +442,8 @@ export const resetDatabase = async () => {
     await localDb.execAsync("DROP TABLE IF EXISTS notes;");
     await localDb.execAsync("DROP TABLE IF EXISTS scan_notes;");
     await localDb.execAsync("DROP TABLE IF EXISTS quiz_maker;");
+    await localDb.execAsync("DROP TABLE IF EXISTS flash_card_sets;"); // Added this line
+    await localDb.execAsync("DROP TABLE IF EXISTS mind_maps;"); // Added this line
     
     // Reinitialize all tables
     await initDatabase();
@@ -424,63 +552,3 @@ export const migrateDatabase = async () => {
       }
     }
   };
-
-// --- Flash Card Sets ---
-export interface FlashCardSet {
-    id: number;
-    title: string;
-    content: string;
-    card_type: string;
-    source_note_id?: number;
-    source_note_type?: string;
-    createdAt: string;
-}
-
-export const initFlashCardSetTable = async () => {
-    const localDb = await getDb();
-    await localDb.execAsync(
-      "CREATE TABLE IF NOT EXISTS flash_card_sets (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, content TEXT, card_type TEXT, source_note_id INTEGER, source_note_type TEXT, createdAt TEXT);"
-    );
-};
-
-export const addFlashCardSet = async (
-  title: string, 
-  content: string,
-  cardType: string,
-  sourceNoteId?: number,
-  sourceNoteType?: 'note' | 'scan-note'
-): Promise<number> => {
-    const localDb = await getDb();
-    const result = await localDb.runAsync(
-      "INSERT INTO flash_card_sets (title, content, card_type, source_note_id, source_note_type, createdAt) VALUES (?, ?, ?, ?, ?, ?);",
-      [title, content, cardType, sourceNoteId ?? null, sourceNoteType ?? null, new Date().toISOString()]
-    );
-    return result.lastInsertRowId;
-};
-
-export const getAllFlashCardSets = async (): Promise<FlashCardSet[]> => {
-    const localDb = await getDb();
-    try {
-      const result = await localDb.getAllAsync("SELECT * FROM flash_card_sets ORDER BY createdAt DESC;");
-      return (result as FlashCardSet[]) ?? [];
-    } catch (error) {
-      console.warn("Could not get flash card sets.", error);
-      return [];
-    }
-};
-
-export const getFlashCardSetById = async (id: number): Promise<FlashCardSet | null> => {
-    const localDb = await getDb();
-    const result = await localDb.getFirstAsync("SELECT * FROM flash_card_sets WHERE id = ?;", [id]);
-    return result as FlashCardSet | null;
-};
-
-export const updateFlashCardSet = async (id: number, title: string, content: string) => {
-    const localDb = await getDb();
-    await localDb.runAsync("UPDATE flash_card_sets SET title = ?, content = ? WHERE id = ?;", [title, content, id]);
-};
-
-export const deleteFlashCardSet = async (id: number) => {
-    const localDb = await getDb();
-    await localDb.runAsync("DELETE FROM flash_card_sets WHERE id = ?;", [id]);
-};
