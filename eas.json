@@ -10,25 +10,11 @@
     },
     "preview": {
       "distribution": "internal",
-      "env": {
-        "EXPO_PUBLIC_REVENUCAT_API_KEY":"goog_MbtvzZWOvbOowwuAEceuQFLMVaF",
-        "EXPO_PUBLIC_REVENUCAT_IOS_KEY":"goog_MbtvzZWOvbOowwuAEceuQFLMVaF",
-        "EXPO_PUBLIC_SUPABASE_URL":"https://mnjhkeygyczkziowlrab.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_KEY":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1uamhrZXlneWN6a3ppb3dscmFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE4ODQ4NzcsImV4cCI6MjA2NzQ2MDg3N30.9unaHI1ZXmSLMDf1szwmsR6oGXpDrn7-MTH-YXH5hng",
-        "EXPO_PUBLIC_SUPABASE_URL_FUNCTIONS":"https://mnjhkeygyczkziowlrab.supabase.co/functions/v1",
-        "EXPO_PUBLIC_SUPABASE_BEARER_TOKEN":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1uamhrZXlneWN6a3ppb3dscmFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE4ODQ4NzcsImV4cCI6MjA2NzQ2MDg3N30.9unaHI1ZXmSLMDf1szwmsR6oGXpDrn7-MTH-YXH5hng"
-      }
+     
     },
     "production": {
       "autoIncrement": true,
-      "env": {
-        "EXPO_PUBLIC_REVENUCAT_API_KEY":"goog_MbtvzZWOvbOowwuAEceuQFLMVaF",
-        "EXPO_PUBLIC_REVENUCAT_IOS_KEY":"goog_MbtvzZWOvbOowwuAEceuQFLMVaF",
-        "EXPO_PUBLIC_SUPABASE_URL":"https://mnjhkeygyczkziowlrab.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_KEY":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1uamhrZXlneWN6a3ppb3dscmFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE4ODQ4NzcsImV4cCI6MjA2NzQ2MDg3N30.9unaHI1ZXmSLMDf1szwmsR6oGXpDrn7-MTH-YXH5hng",
-        "EXPO_PUBLIC_SUPABASE_URL_FUNCTIONS":"https://mnjhkeygyczkziowlrab.supabase.co/functions/v1",
-        "EXPO_PUBLIC_SUPABASE_BEARER_TOKEN":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1uamhrZXlneWN6a3ppb3dscmFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE4ODQ4NzcsImV4cCI6MjA2NzQ2MDg3N30.9unaHI1ZXmSLMDf1szwmsR6oGXpDrn7-MTH-YXH5hng"
-      }
+      
     }
   },
   "submit": {
