@@ -4,14 +4,14 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
+  Dimensions,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View
+  View,
 } from 'react-native';
 import AuthModal from '../components/AuthModal';
-import { useThemeColor } from '../hooks/useThemeColor';
 import { useThemeContext } from '../providers/ThemeProvider';
 import {
   getAllFlashCardSets,
@@ -22,6 +22,8 @@ import {
 } from '../services/historyStorage';
 import subscriptionService from '../services/subscriptionService';
 import { supabase } from '../utils/supabase';
+
+const { width } = Dimensions.get('window');
 
 interface UserStats {
   problemsSolved: number;
@@ -44,31 +46,42 @@ const Profile = () => {
   const router = useRouter();
   const { resolvedTheme, toggleTheme } = useThemeContext();
   
-  // Theme colors
-  const backgroundColor = useThemeColor({}, 'background');
-  const textColor = useThemeColor({}, 'text');
-  const iconColor = useThemeColor({}, 'icon');
-  const tintColor = useThemeColor({}, 'tint');
-  
-  // Theme-aware color palette
+  // Enhanced dark mode color palette
   const colors = {
-    primary: resolvedTheme === 'dark' ? '#0a7ea4' : tintColor, // Use light tint color for dark mode
-    success: resolvedTheme === 'dark' ? '#10b981' : '#059669',
-    warning: resolvedTheme === 'dark' ? '#f59e0b' : '#d97706',
-    danger: resolvedTheme === 'dark' ? '#ef4444' : '#dc2626',
-    accent: resolvedTheme === 'dark' ? '#06b6d4' : '#0891b2',
-    secondary: resolvedTheme === 'dark' ? '#8b5cf6' : '#7c3aed',
+    // Background colors
+    background: '#0a0a0b',
+    surface: '#111113',
+    card: '#16161a',
+    cardSecondary: '#1c1c23',
+    cardTertiary: '#252530',
     
-    surface: resolvedTheme === 'dark' ? '#1e293b' : '#f8fafc',
-    card: resolvedTheme === 'dark' ? '#1e293b' : '#ffffff',
-    cardSecondary: resolvedTheme === 'dark' ? '#334155' : '#f8fafc',
+    // Text colors
+    textPrimary: '#ffffff',
+    textSecondary: '#a1a1aa',
+    textTertiary: '#71717a',
     
-    border: iconColor,
-    overlay: 'rgba(0, 0, 0, 0.5)',
+    // Brand colors
+    primary: '#3b82f6',
+    primaryDark: '#2563eb',
+    secondary: '#8b5cf6',
+    accent: '#06b6d4',
     
-    // Better icon colors for dark mode
-    iconPrimary: resolvedTheme === 'dark' ? '#ffffff' : iconColor,
-    iconSecondary: resolvedTheme === 'dark' ? '#94a3b8' : iconColor,
+    // Status colors
+    success: '#10b981',
+    warning: '#f59e0b',
+    danger: '#ef4444',
+    
+    // Borders and dividers
+    border: '#27272a',
+    borderLight: '#3f3f46',
+    
+    // Gradients
+    gradientStart: '#1e1b4b',
+    gradientEnd: '#312e81',
+    
+    // Glass effect
+    glass: 'rgba(255, 255, 255, 0.05)',
+    glassStrong: 'rgba(255, 255, 255, 0.1)',
   };
   
   // State
@@ -85,14 +98,14 @@ const Profile = () => {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
 
-  // Quick actions data
+  // Quick actions data with updated styling
   const quickActions = [
-    { id: 'study', icon: 'book-outline', title: 'Study Plans', route: '/study-notes' },
-    { id: 'quiz', icon: 'help-circle-outline', title: 'Quiz Me', route: '/quiz-maker' },
-    { id: 'flashcards', icon: 'card-outline', title: 'Flashcards', route: '/flash-cards' },
-    { id: 'notes', icon: 'document-text-outline', title: 'History', route: '/HistoryList' },
-    { id: 'progress', icon: 'trending-up-outline', title: 'Progress', route: '/explore' },
-    { id: 'achievements', icon: 'trophy-outline', title: 'Achievements', route: '/explore' },
+    { id: 'study', icon: 'book-outline', title: 'Study Plans', route: '/study-notes', color: colors.primary },
+    { id: 'quiz', icon: 'help-circle-outline', title: 'Quiz Me', route: '/quiz-maker', color: colors.secondary },
+    { id: 'flashcards', icon: 'card-outline', title: 'Flashcards', route: '/flash-cards', color: colors.accent },
+    { id: 'notes', icon: 'document-text-outline', title: 'History', route: '/HistoryList', color: colors.success },
+    { id: 'progress', icon: 'trending-up-outline', title: 'Progress', route: '/explore', color: colors.warning },
+    { id: 'achievements', icon: 'trophy-outline', title: 'Achievements', route: '/explore', color: colors.danger },
   ];
 
   const achievements: Achievement[] = [
@@ -124,11 +137,9 @@ const Profile = () => {
 
   const handleGetCredits = async () => {
     try {
-      // Check if user is authenticated
       const { data: { session: currentSession } } = await supabase.auth.getSession();
       
       if (!currentSession) {
-        // User is not authenticated, show auth modal
         Alert.alert(
           'Authentication Required',
           'Please sign in to access credits and make purchases.',
@@ -140,7 +151,6 @@ const Profile = () => {
         return;
       }
       
-      // User is authenticated, proceed to credits page
       router.push('/paywall');
     } catch (error) {
       console.error('Error checking authentication:', error);
@@ -155,11 +165,9 @@ const Profile = () => {
   const loadUserData = async () => {
     setLoading(true);
     try {
-      // Load credits from online storage only
       const creditData = await subscriptionService.getCurrentCredits();
       setCredits(creditData.total);
 
-      // Load all data to calculate stats
       const [history, notes, scanNotes, quizzes, flashCards] = await Promise.all([
         getAllHistory(),
         getAllNotes(),
@@ -168,7 +176,6 @@ const Profile = () => {
         getAllFlashCardSets()
       ]);
 
-      // Calculate days active (simplified - count unique days with activity)
       const allDates = [
         ...history.map(h => new Date(h.createdAt).toDateString()),
         ...notes.map(n => new Date(n.createdAt).toDateString()),
@@ -204,48 +211,80 @@ const Profile = () => {
   const handleAuthSuccess = (newSession: Session) => {
     setSession(newSession);
     setShowAuthModal(false);
-    // Reload user data after successful authentication
     loadUserData();
   };
 
   const handleAccountSettingsPress = () => {
     console.log('Account Settings button pressed');
-    console.log('Current showAuthModal state:', showAuthModal);
-    console.log('Current session:', session);
     setShowAuthModal(true);
-    console.log('Set showAuthModal to true');
   };
 
   const ProfileHeader = () => (
-    <View style={[styles.profileHeader, { backgroundColor }]}>
-      <View style={styles.headerBackground}>
-        <View style={styles.headerContent}>
-          {/* Avatar Section */}
+    <View style={[styles.profileHeader, { backgroundColor: colors.background }]}>
+      {/* Gradient Background */}
+      <View style={styles.gradientBackground}>
+        <View style={[styles.gradientOverlay, { 
+          backgroundColor: `linear-gradient(135deg, ${colors.gradientStart} 0%, ${colors.gradientEnd} 100%)`
+        }]} />
+      </View>
+      
+      <View style={styles.headerContent}>
+        {/* Top Row - Avatar and Actions */}
+        <View style={styles.headerTop}>
           <View style={styles.avatarSection}>
-            <View style={[styles.avatarContainer, { backgroundColor: colors.primary }]}>
-              <Text style={[styles.avatarText, { color: '#ffffff' }]}>
+            <View style={[styles.avatarContainer, { 
+              backgroundColor: colors.primary,
+              shadowColor: colors.primary,
+            }]}>
+              <Text style={styles.avatarText}>
                 {session?.user?.email?.charAt(0).toUpperCase() || 'U'}
               </Text>
               <View style={[styles.statusDot, { backgroundColor: colors.success }]} />
             </View>
           </View>
 
-          {/* User Info */}
-          <View style={styles.userInfo}>
-            <Text style={[styles.greeting, { color: textColor }]}>
-              {session ? 'Welcome back!' : 'Welcome to BookIQ!'}
-            </Text>
-            <Text style={[styles.userEmail, { color: colors.iconSecondary }]}>
-              {session?.user?.email || 'user@bookiq.app'}
-            </Text>
-            
-            {/* Credits Display */}
-            <View style={styles.creditsRow}>
-              <View style={[styles.creditsContainer, { backgroundColor: colors.cardSecondary }]}>
-                <Text style={styles.creditsIcon}>💎</Text>
-                <Text style={[styles.creditsText, { color: textColor }]}>
-                  {credits.toLocaleString()} credits
-                </Text>
+          <View style={styles.headerActions}>
+            <TouchableOpacity 
+              style={[styles.iconButton, { backgroundColor: colors.glass }]}
+              onPress={toggleTheme}
+            >
+              <Ionicons 
+                name="sunny-outline"
+                size={20} 
+                color={colors.textPrimary} 
+              />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.iconButton, { backgroundColor: colors.glass }]}
+              onPress={handleGetCredits}
+            >
+              <Ionicons name="notifications-outline" size={20} color={colors.textPrimary} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* User Info */}
+        <View style={styles.userInfoSection}>
+          <Text style={[styles.greeting, { color: colors.textPrimary }]}>
+            {session ? 'Welcome back!' : 'Welcome to BookIQ!'}
+          </Text>
+          <Text style={[styles.userEmail, { color: colors.textSecondary }]}>
+            {session?.user?.email || 'user@bookiq.app'}
+          </Text>
+          
+          {/* Credits Card */}
+          <View style={[styles.creditsCard, { backgroundColor: colors.glass }]}>
+            <View style={styles.creditsContent}>
+              <View style={styles.creditsLeft}>
+                <Text style={styles.creditsEmoji}>💎</Text>
+                <View>
+                  <Text style={[styles.creditsAmount, { color: colors.textPrimary }]}>
+                    {credits.toLocaleString()}
+                  </Text>
+                  <Text style={[styles.creditsLabel, { color: colors.textSecondary }]}>
+                    Credits Available
+                  </Text>
+                </View>
               </View>
               <TouchableOpacity 
                 style={[styles.refreshButton, { backgroundColor: colors.primary }]}
@@ -253,32 +292,12 @@ const Profile = () => {
                 disabled={loading}
               >
                 <Ionicons 
-                  name={loading ? "refresh" : "refresh-outline"} 
-                  size={16} 
+                  name={loading ? "refresh" : "add-outline"} 
+                  size={18} 
                   color="#ffffff" 
                 />
               </TouchableOpacity>
             </View>
-          </View>
-
-          {/* Header Actions */}
-          <View style={styles.headerActions}>
-            <TouchableOpacity 
-              style={[styles.iconButton, { backgroundColor: colors.cardSecondary }]}
-              onPress={toggleTheme}
-            >
-              <Ionicons 
-                name={resolvedTheme === 'dark' ? "sunny-outline" : "moon-outline"} 
-                size={20} 
-                color={colors.iconPrimary} 
-              />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.iconButton, { backgroundColor: colors.cardSecondary }]}
-              onPress={handleGetCredits}
-            >
-              <Ionicons name="settings-outline" size={20} color={colors.iconPrimary} />
-            </TouchableOpacity>
           </View>
         </View>
 
@@ -287,21 +306,22 @@ const Profile = () => {
           <TouchableOpacity 
             style={[styles.primaryButton, { backgroundColor: colors.primary }]}
             onPress={handleAccountSettingsPress}
-            activeOpacity={0.8}
           >
             <Text style={styles.buttonText}>
               {session ? 'Account Settings' : 'Sign In'}
             </Text>
+            <Ionicons name="arrow-forward" size={16} color="#ffffff" />
           </TouchableOpacity>
           <TouchableOpacity 
             style={[styles.secondaryButton, { 
-              backgroundColor: colors.surface,
+              backgroundColor: colors.glass,
               borderColor: colors.border
             }]}
             onPress={handleGetCredits}
-            activeOpacity={0.8}
           >
-            <Text style={[styles.buttonTextSecondary, { color: textColor }]}>Get Credits</Text>
+            <Text style={[styles.buttonTextSecondary, { color: colors.textPrimary }]}>
+              Get Credits
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -309,72 +329,115 @@ const Profile = () => {
   );
 
   const StatsSection = () => (
-    <View style={[styles.statsCard, { 
-      backgroundColor: colors.card,
-      borderColor: colors.border
-    }]}>
+    <View style={[styles.statsCard, { backgroundColor: colors.card }]}>
       <View style={styles.cardHeader}>
-        <Text style={[styles.sectionTitle, { color: textColor }]}>Your Progress</Text>
-        <Ionicons name="trending-up-outline" size={24} color={colors.primary} />
+        <View>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+            Your Progress
+          </Text>
+          <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
+            Keep up the great work!
+          </Text>
+        </View>
+        <View style={[styles.iconContainer, { backgroundColor: colors.primary }]}>
+          <Ionicons name="trending-up-outline" size={20} color="#ffffff" />
+        </View>
       </View>
       
       <View style={styles.statsGrid}>
-        <View style={styles.statItem}>
-          <Text style={[styles.statNumber, { color: colors.primary }]}>{stats.problemsSolved}</Text>
-          <Text style={[styles.statLabel, { color: colors.iconSecondary }]}>Problems Solved</Text>
+        <View style={[styles.statCard, { backgroundColor: colors.cardSecondary }]}>
+          <View style={[styles.statIcon, { backgroundColor: colors.primary }]}>
+            <Ionicons name="checkmark-done-outline" size={16} color="#ffffff" />
+          </View>
+          <Text style={[styles.statNumber, { color: colors.textPrimary }]}>
+            {stats.problemsSolved}
+          </Text>
+          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+            Problems Solved
+          </Text>
         </View>
-        <View style={styles.statItem}>
-          <Text style={[styles.statNumber, { color: colors.success }]}>{stats.daysActive}</Text>
-          <Text style={[styles.statLabel, { color: colors.iconSecondary }]}>Days Active</Text>
+        
+        <View style={[styles.statCard, { backgroundColor: colors.cardSecondary }]}>
+          <View style={[styles.statIcon, { backgroundColor: colors.success }]}>
+            <Ionicons name="calendar-outline" size={16} color="#ffffff" />
+          </View>
+          <Text style={[styles.statNumber, { color: colors.textPrimary }]}>
+            {stats.daysActive}
+          </Text>
+          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+            Days Active
+          </Text>
         </View>
-        <View style={styles.statItem}>
-          <Text style={[styles.statNumber, { color: colors.accent }]}>{stats.notesCreated}</Text>
-          <Text style={[styles.statLabel, { color: colors.iconSecondary }]}>Notes Created</Text>
+        
+        <View style={[styles.statCard, { backgroundColor: colors.cardSecondary }]}>
+          <View style={[styles.statIcon, { backgroundColor: colors.accent }]}>
+            <Ionicons name="document-text-outline" size={16} color="#ffffff" />
+          </View>
+          <Text style={[styles.statNumber, { color: colors.textPrimary }]}>
+            {stats.notesCreated}
+          </Text>
+          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+            Notes Created
+          </Text>
         </View>
       </View>
 
-      <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-      <View style={styles.statsGrid}>
-        <View style={styles.statItem}>
-          <Text style={[styles.statNumber, { color: colors.secondary }]}>{stats.totalScans}</Text>
-          <Text style={[styles.statLabel, { color: colors.iconSecondary }]}>Total Scans</Text>
+      <View style={styles.additionalStats}>
+        <View style={styles.additionalStatItem}>
+          <Text style={[styles.additionalStatNumber, { color: colors.secondary }]}>
+            {stats.totalScans}
+          </Text>
+          <Text style={[styles.additionalStatLabel, { color: colors.textTertiary }]}>
+            Total Scans
+          </Text>
         </View>
-        <View style={styles.statItem}>
-          <Text style={[styles.statNumber, { color: colors.warning }]}>{stats.quizzesCreated}</Text>
-          <Text style={[styles.statLabel, { color: colors.iconSecondary }]}>Quizzes</Text>
+        <View style={styles.additionalStatItem}>
+          <Text style={[styles.additionalStatNumber, { color: colors.warning }]}>
+            {stats.quizzesCreated}
+          </Text>
+          <Text style={[styles.additionalStatLabel, { color: colors.textTertiary }]}>
+            Quizzes
+          </Text>
         </View>
-        <View style={styles.statItem}>
-          <Text style={[styles.statNumber, { color: colors.danger }]}>{stats.flashCardsCreated}</Text>
-          <Text style={[styles.statLabel, { color: colors.iconSecondary }]}>Flash Cards</Text>
+        <View style={styles.additionalStatItem}>
+          <Text style={[styles.additionalStatNumber, { color: colors.danger }]}>
+            {stats.flashCardsCreated}
+          </Text>
+          <Text style={[styles.additionalStatLabel, { color: colors.textTertiary }]}>
+            Flash Cards
+          </Text>
         </View>
       </View>
     </View>
   );
 
   const QuickActionsSection = () => (
-    <View style={[styles.quickActionsCard, { 
-      backgroundColor: colors.card,
-      borderColor: colors.border
-    }]}>
+    <View style={[styles.quickActionsCard, { backgroundColor: colors.card }]}>
       <View style={styles.cardHeader}>
-        <Text style={[styles.sectionTitle, { color: textColor }]}>Quick Actions</Text>
-        <Ionicons name="flash-outline" size={24} color={colors.primary} />
+        <View>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+            Quick Actions
+          </Text>
+          <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
+            Jump into your studies
+          </Text>
+        </View>
+        <View style={[styles.iconContainer, { backgroundColor: colors.warning }]}>
+          <Ionicons name="flash-outline" size={20} color="#ffffff" />
+        </View>
       </View>
       
       <View style={styles.quickActionsGrid}>
         {quickActions.map((action) => (
           <TouchableOpacity
             key={action.id}
-            style={[styles.quickActionItem, { 
-              backgroundColor: colors.cardSecondary
-            }]}
+            style={[styles.quickActionItem, { backgroundColor: colors.cardSecondary }]}
             onPress={() => handleQuickAction(action)}
           >
-            <View style={[styles.quickActionIcon, { backgroundColor: colors.primary }]}>
-              <Ionicons name={action.icon as any} size={24} color="#ffffff" />
+            <View style={[styles.quickActionIcon, { backgroundColor: action.color }]}>
+              <Ionicons name={action.icon as any} size={22} color="#ffffff" />
             </View>
-            <Text style={[styles.quickActionText, { color: textColor }]}>
+            <Text style={[styles.quickActionText, { color: colors.textPrimary }]}>
               {action.title}
             </Text>
           </TouchableOpacity>
@@ -384,35 +447,43 @@ const Profile = () => {
   );
 
   const AchievementsSection = () => (
-    <View style={[styles.achievementsCard, { 
-      backgroundColor: colors.card,
-      borderColor: colors.border
-    }]}>
+    <View style={[styles.achievementsCard, { backgroundColor: colors.card }]}>
       <View style={styles.cardHeader}>
-        <Text style={[styles.sectionTitle, { color: textColor }]}>Recent Achievements</Text>
-        <Ionicons name="trophy-outline" size={24} color={colors.primary} />
+        <View>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+            Recent Achievements
+          </Text>
+          <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
+            Your milestones
+          </Text>
+        </View>
+        <View style={[styles.iconContainer, { backgroundColor: colors.warning }]}>
+          <Ionicons name="trophy-outline" size={20} color="#ffffff" />
+        </View>
       </View>
       
       <View style={styles.achievementsList}>
         {achievements.slice(0, 3).map((achievement) => (
           <View key={achievement.id} style={[styles.achievementItem, { 
-            backgroundColor: colors.cardSecondary
+            backgroundColor: colors.cardSecondary,
+            borderLeftColor: achievement.earned ? colors.success : colors.border,
           }]}>
             <View style={[styles.achievementIcon, { 
-              backgroundColor: achievement.earned ? colors.success : colors.border,
-              opacity: achievement.earned ? 1 : 0.5
+              backgroundColor: achievement.earned ? colors.success : colors.cardTertiary,
             }]}>
               <Ionicons 
                 name={achievement.icon as any} 
-                size={20} 
-                color="#ffffff" 
+                size={18} 
+                color={achievement.earned ? "#ffffff" : colors.textTertiary} 
               />
             </View>
             <View style={styles.achievementContent}>
-              <Text style={[styles.achievementTitle, { color: textColor }]}>
+              <Text style={[styles.achievementTitle, { 
+                color: achievement.earned ? colors.textPrimary : colors.textSecondary 
+              }]}>
                 {achievement.title}
               </Text>
-              <Text style={[styles.achievementDescription, { color: colors.iconSecondary }]}>
+              <Text style={[styles.achievementDescription, { color: colors.textTertiary }]}>
                 {achievement.description}
               </Text>
             </View>
@@ -428,41 +499,59 @@ const Profile = () => {
   );
 
   const StudyStreakSection = () => (
-    <View style={[styles.streakCard, { 
-      backgroundColor: colors.card,
-      borderColor: colors.border
-    }]}>
+    <View style={[styles.streakCard, { backgroundColor: colors.card }]}>
       <View style={styles.cardHeader}>
-        <Text style={[styles.sectionTitle, { color: textColor }]}>Study Streak</Text>
-        <Ionicons name="flame-outline" size={24} color={colors.warning} />
+        <View>
+          <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+            Study Streak
+          </Text>
+          <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
+            Keep the momentum going!
+          </Text>
+        </View>
+        <View style={[styles.iconContainer, { backgroundColor: colors.warning }]}>
+          <Ionicons name="flame-outline" size={20} color="#ffffff" />
+        </View>
       </View>
       
       <View style={styles.streakContent}>
-        <View style={styles.streakNumber}>
-          <Text style={[styles.streakDays, { color: colors.warning }]}>{stats.daysActive}</Text>
-          <Text style={[styles.streakLabel, { color: colors.iconSecondary }]}>days</Text>
+        <View style={[styles.streakNumberCard, { backgroundColor: colors.cardSecondary }]}>
+          <Text style={[styles.streakDays, { color: colors.warning }]}>
+            {stats.daysActive}
+          </Text>
+          <Text style={[styles.streakLabel, { color: colors.textSecondary }]}>
+            days
+          </Text>
         </View>
+        
         <View style={styles.streakProgress}>
-          <View style={[styles.progressBar, { 
-            backgroundColor: colors.cardSecondary
-          }]}>
+          <View style={styles.progressHeader}>
+            <Text style={[styles.progressTitle, { color: colors.textPrimary }]}>
+              Weekly Goal
+            </Text>
+            <Text style={[styles.progressPercentage, { color: colors.textSecondary }]}>
+              {Math.min((stats.daysActive / 7) * 100, 100).toFixed(0)}%
+            </Text>
+          </View>
+          <View style={[styles.progressBar, { backgroundColor: colors.cardTertiary }]}>
             <View style={[styles.progressFill, { 
               backgroundColor: colors.warning,
               width: `${Math.min((stats.daysActive / 7) * 100, 100)}%`
             }]} />
           </View>
-          <Text style={[styles.progressText, { color: colors.iconSecondary }]}>
-            {stats.daysActive >= 7 ? 'Great job! Keep it up!' : `${7 - stats.daysActive} more days to reach your goal!`}
+          <Text style={[styles.progressText, { color: colors.textTertiary }]}>
+            {stats.daysActive >= 7 
+              ? 'Excellent! You\'ve reached your weekly goal!' 
+              : `${7 - stats.daysActive} more days to complete your goal`
+            }
           </Text>
         </View>
       </View>
     </View>
   );
 
-
-
   return (
-    <View style={[styles.container, { backgroundColor }]}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView 
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
@@ -477,10 +566,7 @@ const Profile = () => {
       
       <AuthModal 
         visible={showAuthModal}
-        onClose={() => {
-          console.log('AuthModal closing');
-          setShowAuthModal(false);
-        }}
+        onClose={() => setShowAuthModal(false)}
         onAuthSuccess={handleAuthSuccess}
       />
     </View>
@@ -495,131 +581,167 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 32,
+    paddingBottom: 40,
   },
   
   // Profile Header
   profileHeader: {
     paddingTop: 60,
-    paddingBottom: 24,
+    paddingBottom: 32,
+    position: 'relative',
   },
-  headerBackground: {
-    paddingHorizontal: 20,
+  gradientBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  gradientOverlay: {
+    flex: 1,
+    opacity: 0.1,
   },
   headerContent: {
+    paddingHorizontal: 24,
+    position: 'relative',
+    zIndex: 1,
+  },
+  headerTop: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 24,
   },
   avatarSection: {
-    marginRight: 16,
+    alignItems: 'flex-start',
   },
   avatarContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowColor: '#3b82f6',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
   },
   avatarText: {
-    fontSize: 24,
-    fontWeight: '700',
+    fontSize: 28,
+    fontWeight: '800',
     color: '#ffffff',
   },
   statusDot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     position: 'absolute',
-    bottom: -2,
-    right: -2,
+    bottom: 0,
+    right: 0,
     borderWidth: 3,
-    borderColor: '#ffffff',
-  },
-  userInfo: {
-    flex: 1,
-  },
-  greeting: {
-    fontSize: 24,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  userEmail: {
-    fontSize: 16,
-    marginBottom: 16,
-  },
-  creditsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  creditsContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    flex: 1,
-  },
-  creditsIcon: {
-    fontSize: 16,
-    marginRight: 8,
-  },
-  creditsText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  refreshButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderColor: '#0a0a0b',
   },
   headerActions: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 12,
   },
   iconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+    backdropFilter: 'blur(10px)',
+  },
+  userInfoSection: {
+    marginBottom: 32,
+  },
+  greeting: {
+    fontSize: 32,
+    fontWeight: '800',
+    marginBottom: 4,
+    letterSpacing: -0.5,
+  },
+  userEmail: {
+    fontSize: 16,
+    marginBottom: 24,
+    opacity: 0.8,
+  },
+  creditsCard: {
+    borderRadius: 20,
+    padding: 20,
+    backdropFilter: 'blur(20px)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  creditsContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  creditsLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  creditsEmoji: {
+    fontSize: 24,
+  },
+  creditsAmount: {
+    fontSize: 24,
+    fontWeight: '800',
+    marginBottom: 2,
+  },
+  creditsLabel: {
+    fontSize: 14,
+    opacity: 0.7,
+  },
+  refreshButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#3b82f6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   actionButtons: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 16,
   },
   primaryButton: {
     flex: 1,
-    paddingVertical: 14,
-    borderRadius: 16,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 16,
+    gap: 8,
+    shadowColor: '#3b82f6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
   },
   secondaryButton: {
     flex: 1,
-    paddingVertical: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
+    backdropFilter: 'blur(10px)',
   },
   buttonText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#ffffff',
   },
   buttonTextSecondary: {
@@ -629,109 +751,154 @@ const styles = StyleSheet.create({
   
   // Cards
   statsCard: {
-    marginHorizontal: 20,
-    marginBottom: 20,
-    borderRadius: 20,
+    marginHorizontal: 24,
+    marginBottom: 24,
+    borderRadius: 24,
     padding: 24,
-    borderWidth: 1,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 4,
   },
   quickActionsCard: {
-    marginHorizontal: 20,
-    marginBottom: 20,
-    borderRadius: 20,
+    marginHorizontal: 24,
+    marginBottom: 24,
+    borderRadius: 24,
     padding: 24,
-    borderWidth: 1,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 4,
   },
   achievementsCard: {
-    marginHorizontal: 20,
-    marginBottom: 20,
-    borderRadius: 20,
+    marginHorizontal: 24,
+    marginBottom: 24,
+    borderRadius: 24,
     padding: 24,
-    borderWidth: 1,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 4,
   },
   streakCard: {
-    marginHorizontal: 20,
-    marginBottom: 20,
-    borderRadius: 20,
+    marginHorizontal: 24,
+    marginBottom: 24,
+    borderRadius: 24,
     padding: 24,
-    borderWidth: 1,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 4,
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
+    alignItems: 'flex-start',
+    marginBottom: 24,
   },
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: '700',
+    fontSize: 22,
+    fontWeight: '800',
+    marginBottom: 4,
+    letterSpacing: -0.3,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    opacity: 0.7,
+  },
+  iconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   
   // Stats
   statsGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 16,
+    gap: 16,
+    marginBottom: 24,
   },
-  statItem: {
-    alignItems: 'center',
+  statCard: {
     flex: 1,
+    padding: 20,
+    borderRadius: 18,
+    alignItems: 'center',
+  },
+  statIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
   },
   statNumber: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '800',
     marginBottom: 4,
   },
   statLabel: {
     fontSize: 12,
     textAlign: 'center',
-    fontWeight: '500',
+    fontWeight: '600',
+    opacity: 0.8,
   },
-  divider: {
-    height: 1,
-    marginVertical: 16,
+  additionalStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  additionalStatItem: {
+    alignItems: 'center',
+  },
+  additionalStatNumber: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  additionalStatLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    opacity: 0.6,
   },
   
   // Quick Actions
   quickActionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    gap: 12,
+    gap: 16,
   },
   quickActionItem: {
-    width: '48%',
+    width: '47%',
     alignItems: 'center',
     padding: 20,
-    borderRadius: 16,
+    borderRadius: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   quickActionIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   quickActionText: {
     fontSize: 14,
@@ -741,73 +908,113 @@ const styles = StyleSheet.create({
   
   // Achievements
   achievementsList: {
-    gap: 12,
+    gap: 16,
   },
   achievementItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    borderRadius: 16,
+    padding: 20,
+    borderRadius: 18,
+    borderLeftWidth: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   achievementIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 16,
   },
   achievementContent: {
     flex: 1,
   },
   achievementTitle: {
     fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 2,
+    fontWeight: '700',
+    marginBottom: 4,
   },
   achievementDescription: {
     fontSize: 14,
+    opacity: 0.8,
   },
   earnedBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#10b981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
   
   // Study Streak
   streakContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 20,
+    gap: 24,
   },
-  streakNumber: {
+  streakNumberCard: {
     alignItems: 'center',
+    padding: 20,
+    borderRadius: 18,
+    minWidth: 100,
   },
   streakDays: {
-    fontSize: 36,
-    fontWeight: '800',
+    fontSize: 40,
+    fontWeight: '900',
+    marginBottom: 4,
   },
   streakLabel: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
+    opacity: 0.8,
   },
   streakProgress: {
     flex: 1,
   },
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  progressTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  progressPercentage: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
   progressBar: {
     height: 8,
     borderRadius: 4,
-    marginBottom: 8,
+    marginBottom: 12,
+    overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
     borderRadius: 4,
+    shadowColor: '#f59e0b',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+    elevation: 2,
   },
   progressText: {
-    fontSize: 12,
+    fontSize: 13,
+    lineHeight: 18,
+    opacity: 0.8,
   },
-});
+}
+);
 
 export default Profile;

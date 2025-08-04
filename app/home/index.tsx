@@ -1,9 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
+    ActivityIndicator,
     Alert,
+    Animated,
     Dimensions,
+    Modal,
     Platform,
     ScrollView,
     StatusBar,
@@ -12,16 +15,15 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
-import AIAnswerModal from '../components/AIAnswerModal';
-import ImageScanModal from '../components/ImageScanModal';
-import { useThemeContext } from '../providers/ThemeProvider';
-import { getAnswerFromGemini, processImage } from '../services/geminiServices';
+import AIAnswerModal from '../../components/AIAnswerModal';
+import AIScanModal from '../../components/AIScanModal';
+import { useThemeContext } from '../../providers/ThemeProvider';
+import { getAnswerFromImage } from '../../services/geminiServices';
 import {
     addHistory,
-    addNote,
-    updateHistoryAnswer,
-} from "../services/historyStorage";
-import subscriptionService from "../services/subscriptionService";
+    updateHistoryAnswer
+} from "../../services/historyStorage";
+import subscriptionService from "../../services/subscriptionService";
 
 const { width, height } = Dimensions.get('window');
 
@@ -67,16 +69,16 @@ const Explore = () => {
     ];
 
     const allSubjects = [
-        { name: 'Mathematics', icon: 'calculator-outline', color: '#667eea', feature: 'calculator' },
+        { name: 'Mathematics', icon: 'calculator-outline', color: '#667eea', feature: 'mathematics' },
         { name: 'Physics', icon: 'magnet-outline', color: '#764ba2',  feature: 'physics' },
         { name: 'Chemistry', icon: 'flask-outline', color: '#f093fb',  feature: 'chemistry' },
         { name: 'Biology', icon: 'leaf-outline', color: '#43e97b', feature: 'biology' },
-        { name: 'History', icon: 'time-outline', color: '#ff6b6b',  feature: 'study-notes' },
-        { name: 'Geography', icon: 'earth-outline', color: '#4ecdc4',  feature: 'study-notes' },
-      //  { name: 'Literature', icon: 'library-outline', color: '#45b7d1',  feature: 'study-notes' },
-       // { name: 'Computer Science', icon: 'laptop-outline', color: '#96ceb4',  feature: 'ai-scan' },
-       // { name: 'Economics', icon: 'trending-up-outline', color: '#feca57', feature: 'study-notes' },
-       // { name: 'Psychology', icon: 'bulb-outline', color: '#ff9ff3',  feature: 'study-notes' },
+        { name: 'History', icon: 'time-outline', color: '#ff6b6b',  feature: 'history' },
+        { name: 'Geography', icon: 'earth-outline', color: '#4ecdc4',  feature: 'geography' },
+      //  { name: 'Literature', icon: 'library-outline', color: '#45b7d1',  feature: 'literature' },
+       // { name: 'Computer Science', icon: 'laptop-outline', color: '#96ceb4',  feature: 'computer-science' },
+       // { name: 'Economics', icon: 'trending-up-outline', color: '#feca57', feature: 'economics' },
+       // { name: 'Psychology', icon: 'bulb-outline', color: '#ff9ff3',  feature: 'psychology' },
     ];
 
     // Image scan modal state
@@ -92,6 +94,13 @@ const Explore = () => {
     const [currentAnswer, setCurrentAnswer] = useState<string>('');
     const [currentFeature, setCurrentFeature] = useState<string>('ai-scan');
 
+    // Processing loading state (similar to AI Scan)
+    const [processingModalVisible, setProcessingModalVisible] = useState(false);
+    const [processingStep, setProcessingStep] = useState<string>('Analyzing image...');
+
+    // Animation refs
+    const processingOpacity = useRef(new Animated.Value(0)).current;
+
     // Display logic for tools and subjects
     const displayedTools = showAllTools ? allTools : allTools.slice(0, 6);
     const displayedSubjects = showAllSubjects ? allSubjects : allSubjects.slice(0, 4);
@@ -103,11 +112,27 @@ const Explore = () => {
       'quiz-maker': '/quiz-maker',
       'flash-cards': '/flash-cards',
       'mind-maps':'/mind-maps',
-      'physics': '/physics',
-      'chemistry': '/chemistry',
-      'biology': '/biology',
-      'mathematics': '/mathematics',
-      // Add more features as needed
+      // Removed subject routes since they now use direct scanning
+    };
+
+    // Animate processing modal
+    const showProcessingModal = () => {
+        setProcessingModalVisible(true);
+        Animated.timing(processingOpacity, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+        }).start();
+    };
+
+    const hideProcessingModal = () => {
+        Animated.timing(processingOpacity, {
+            toValue: 0,
+            duration: 300,
+            useNativeDriver: true,
+        }).start(() => {
+            setProcessingModalVisible(false);
+        });
     };
 
     const handleToolPress = (feature: string) => {
@@ -117,6 +142,11 @@ const Explore = () => {
       } else {
         openScanModal(feature);
       }
+    };
+
+    const handleSubjectPress = (feature: string) => {
+        // All subjects now use direct scanning like AI Scan
+        openScanModal(feature);
     };
 
     const openScanModal = (feature: string) => {
@@ -130,83 +160,82 @@ const Explore = () => {
       setPendingHistoryId(null);
     };
 
-    const processScannedImage = async (uri: string): Promise<string> => {
-      try {
-        const creditResult = await subscriptionService.spendCredits(1);
-        if (!creditResult.success) {
-          Alert.alert(
-            "Out of Credits",
-            creditResult.error || "You need at least 1 credit to scan an image.",
-            [
-              { text: "Cancel", style: "cancel" },
-              { text: "Get Credits", onPress: () => router.push('/paywall') }
-            ]
-          );
-          throw new Error('Insufficient credits');
+    const processSelectedImage = async (uri: string) => {
+        setPendingHistoryId(null);
+        
+        // Close scan modal and show processing modal
+        setScanModalVisible(false);
+        showProcessingModal();
+        
+        try {
+            setProcessingStep('Checking credits...');
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
+            // Check and spend credits
+            const creditResult = await subscriptionService.spendCredits(1);
+            if (!creditResult.success) {
+                hideProcessingModal();
+                Alert.alert(
+                    'Out of Credits',
+                    creditResult.error || 'You need at least 1 credit to get an answer.',
+                    [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Get Credits', onPress: () => router.push('/paywall') },
+                    ]
+                );
+                throw new Error(creditResult.error || 'Insufficient credits');
+            }
+            
+            setProcessingStep('Saving to history...');
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
+            // Save to history first with empty answer
+            const newHistoryId = await addHistory(uri, pendingFeature || 'ai-scan', '', '');
+            setPendingHistoryId(newHistoryId);
+            
+            setProcessingStep('Analyzing image...');
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            try {
+                // Get answer directly from image using Gemini
+                const { answer } = await getAnswerFromImage(uri);
+                
+                setProcessingStep('Finalizing...');
+                await new Promise(resolve => setTimeout(resolve, 300));
+                
+                // Update history with the answer
+                await updateHistoryAnswer(newHistoryId, answer);
+                
+                // Hide processing modal and show answer modal
+                hideProcessingModal();
+                
+                setTimeout(() => {
+                    setCurrentQuestion(''); // No extracted text for direct image processing
+                    setCurrentAnswer(answer);
+                    setCurrentFeature(pendingFeature || 'ai-scan');
+                    setAiAnswerModalVisible(true);
+                }, 400);
+                
+            } catch (error) {
+                console.error('Error processing image:', error);
+                throw error;
+            }
+            
+        } catch (e: any) {
+            hideProcessingModal();
+            const errorMessage = e.message || 'Something went wrong. Please try again.';
+            setTimeout(() => {
+                Alert.alert('Error', errorMessage);
+            }, 400);
+        } finally {
+            setPendingHistoryId(null);
         }
-
-        const text = await processImage(uri);
-        if (!text || text.trim().length === 0) {
-          throw new Error('No text could be detected in the image. Please try with a clearer image.');
-        }
-
-        return text.trim();
-      } catch (error) {
-        console.error('Image processing error:', error);
-        throw new Error('Failed to process the image. Please try again with a clearer image.');
-      }
     };
 
+    // Updated to handle direct image processing for subjects
     const handleImageProcessed = async (extractedText: string) => {
-      if (!pendingFeature) return;
-
-      try {
-        if (pendingFeature === 'study-notes') {
-          // For study notes, create a note directly
-          const title = extractedText.split('\n')[0].substring(0, 50) + (extractedText.split('\n')[0].length > 50 ? '...' : '');
-          const noteId = await addNote(title, extractedText);
-          await addHistory('', 'study-notes', title, extractedText);
-          
-          Alert.alert(
-            'Note Created',
-            'Your study note has been successfully created!',
-            [{ text: 'OK' }]
-          );
-        } else {
-          // For other features, create history entry and get AI answer
-          const newHistoryId = await addHistory('', pendingFeature, extractedText, '');
-          setPendingHistoryId(newHistoryId);
-          
-          // Get AI answer
-                  const creditResult = await subscriptionService.spendCredits(1);
-        if (!creditResult.success) {
-          Alert.alert(
-            "Out of Credits",
-            creditResult.error || "You need at least 1 credit to get an answer.",
-            [
-              { text: "Cancel", style: "cancel" },
-              { text: "Get Credits", onPress: () => router.push('/paywall') }
-            ]
-          );
-          return;
-        }
-
-          const answer = await getAnswerFromGemini(extractedText, pendingFeature);
-          await updateHistoryAnswer(newHistoryId, answer);
-          
-          // Show AI Answer Modal
-          setCurrentQuestion(extractedText);
-          setCurrentAnswer(answer);
-          setCurrentFeature(pendingFeature);
-          setAiAnswerModalVisible(true);
-        }
-        
-        // Close scan modal
-        closeScanModal();
-      } catch (error) {
-        console.error('Failed to process:', error);
-        Alert.alert('Error', 'Failed to process the request. Please try again.');
-      }
+        // This function is not used with AIScanModal
+        // All processing is handled in processSelectedImage
     };
 
     const getModalTitle = () => {
@@ -219,6 +248,9 @@ const Explore = () => {
         'physics': 'Physics Problem',
         'chemistry': 'Chemistry Problem',
         'biology': 'Biology Problem',
+        'mathematics': 'Mathematics Problem',
+        'history': 'History Question',
+        'geography': 'Geography Question',
         'homework': 'Homework Help',
         'magic-eraser': 'Magic Eraser',
       };
@@ -236,6 +268,9 @@ const Explore = () => {
         'physics': 'Take a photo of a physics problem to get the solution',
         'chemistry': 'Take a photo of a chemistry problem to get the solution',
         'biology': 'Take a photo of a biology problem to get the solution',
+        'mathematics': 'Take a photo of a math problem to get the solution',
+        'history': 'Take a photo of a history question to get the answer',
+        'geography': 'Take a photo of a geography question to get the answer',
         'homework': 'Take a photo of your homework to get help',
         'magic-eraser': 'Take a photo to remove unwanted elements',
       };
@@ -253,6 +288,9 @@ const Explore = () => {
         'physics': 'Get Solution',
         'chemistry': 'Get Solution',
         'biology': 'Get Solution',
+        'mathematics': 'Solve Problem',
+        'history': 'Get Answer',
+        'geography': 'Get Answer',
         'homework': 'Get Help',
         'magic-eraser': 'Remove Elements',
       };
@@ -270,6 +308,9 @@ const Explore = () => {
         'physics': 'magnet-outline',
         'chemistry': 'flask-outline',
         'biology': 'leaf-outline',
+        'mathematics': 'calculator-outline',
+        'history': 'time-outline',
+        'geography': 'earth-outline',
         'homework': 'book-outline',
         'magic-eraser': 'sparkles-outline',
       };
@@ -309,8 +350,6 @@ const Explore = () => {
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.scrollContent}
             >
-               
-
                 {/* Quick Tools */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
@@ -355,7 +394,7 @@ const Explore = () => {
                             <TouchableOpacity 
                                 key={index} 
                                 style={[styles.subjectCard, { backgroundColor: COLORS.cardColor, borderColor: COLORS.borderColor }]}
-                                onPress={() => openScanModal(subject.feature)}
+                                onPress={() => handleSubjectPress(subject.feature)}
                                 activeOpacity={0.8}
                             >
                                 <View style={[styles.subjectIcon, { backgroundColor: subject.color }]}>
@@ -363,7 +402,6 @@ const Explore = () => {
                                 </View>
                                 <View style={styles.subjectInfo}>
                                     <Text style={[styles.subjectName, { color: COLORS.textColor.primary }]}>{subject.name}</Text>
-                                    
                                 </View>
                                 <Ionicons name="chevron-forward" size={16} color={COLORS.iconColor} />
                             </TouchableOpacity>
@@ -372,20 +410,53 @@ const Explore = () => {
                 </View>
             </ScrollView>
 
-            {/* Image Scan Modal */}
-            <ImageScanModal
+            {/* AI Scan Modal */}
+            <AIScanModal
                 visible={scanModalVisible}
                 onClose={closeScanModal}
-                onImageProcessed={handleImageProcessed}
+                onProcessComplete={processSelectedImage}
                 title={getModalTitle()}
                 subtitle={getModalSubtitle()}
-                actionButtonText={getActionButtonText()}
-                actionButtonIcon={getActionButtonIcon()}
                 accentColor={COLORS.accentColor}
-                onProcessImage={processScannedImage}
-                showExtractedText={true}
-                showActionButton={true}
             />
+
+            {/* Processing Modal (similar to AI Scan) */}
+            <Modal
+                visible={processingModalVisible}
+                transparent={true}
+                animationType="none"
+                statusBarTranslucent={true}
+            >
+                <Animated.View 
+                    style={[
+                        styles.processingOverlay,
+                        { opacity: processingOpacity }
+                    ]}
+                >
+                    <View style={[styles.processingModal, { backgroundColor: COLORS.cardColor }]}>
+                        <View style={styles.processingIcon}>
+                            <ActivityIndicator size="large" color={COLORS.accentColor} />
+                        </View>
+                        <Text style={[styles.processingTitle, { color: COLORS.textColor.primary }]}>Processing Image</Text>
+                        <Text style={[styles.processingStep, { color: COLORS.iconColor }]}>{processingStep}</Text>
+                        <View style={styles.processingProgress}>
+                            <View style={styles.progressBar}>
+                                <Animated.View 
+                                    style={[
+                                        styles.progressFill,
+                                        {
+                                            width: processingStep === 'Checking credits...' ? '25%' :
+                                                   processingStep === 'Saving to history...' ? '50%' :
+                                                   processingStep === 'Analyzing image...' ? '75%' :
+                                                   processingStep === 'Finalizing...' ? '100%' : '0%'
+                                        }
+                                    ]} 
+                                />
+                            </View>
+                        </View>
+                    </View>
+                </Animated.View>
+            </Modal>
 
             {/* AI Answer Modal */}
             <AIAnswerModal
@@ -447,82 +518,6 @@ const styles = StyleSheet.create({
     scrollContent: {
         paddingHorizontal: 24,
         paddingBottom: 40,
-    },
-    mainCard: {
-        marginBottom: 32,
-        borderRadius: 24,
-        overflow: 'hidden',
-        elevation: 8,
-        shadowColor: '#667eea',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.3,
-        shadowRadius: 12,
-    },
-    mainCardGradient: {
-        padding: 24,
-        minHeight: 180,
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    mainCardContent: {
-        flex: 1,
-    },
-    mainCardTitle: {
-        fontSize: 24,
-        fontWeight: '800',
-        color: 'white',
-        marginBottom: 8,
-    },
-    mainCardSubtitle: {
-        fontSize: 15,
-        color: 'rgba(255,255,255,0.9)',
-        lineHeight: 22,
-        marginBottom: 24,
-    },
-    actionButtons: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    primaryButton: {
-        backgroundColor: 'white',
-        borderRadius: 16,
-        paddingVertical: 14,
-        paddingHorizontal: 20,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-        flex: 1,
-        justifyContent: 'center',
-    },
-    primaryButtonText: {
-        color: '#667eea',
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    secondaryButton: {
-        backgroundColor: 'rgba(255,255,255,0.2)',
-        borderRadius: 16,
-        padding: 14,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.3)',
-    },
-    mainCardIllustration: {
-        position: 'relative',
-        width: 80,
-        height: 80,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    floatingCard: {
-        width: 60,
-        height: 60,
-        backgroundColor: 'rgba(255,255,255,0.2)',
-        borderRadius: 20,
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.3)',
     },
     section: {
         marginBottom: 32,
@@ -604,10 +599,6 @@ const styles = StyleSheet.create({
         color: '#1a1a1a',
         marginBottom: 4,
     },
-    subjectCount: {
-        fontSize: 14,
-        color: '#666',
-    },
     headerButtons: {
         flexDirection: 'row',
         gap: 12,
@@ -620,6 +611,58 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         borderWidth: 1,
         borderColor: 'rgba(255,255,255,0.3)',
+    },
+    // Processing Modal Styles (copied from AI Scan)
+    processingOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    processingModal: {
+        backgroundColor: '#fff',
+        borderRadius: 20,
+        padding: 32,
+        alignItems: 'center',
+        marginHorizontal: 40,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.3,
+        shadowRadius: 20,
+        elevation: 10,
+    },
+    processingIcon: {
+        marginBottom: 24,
+        padding: 20,
+        borderRadius: 50,
+        backgroundColor: '#f0f4ff',
+    },
+    processingTitle: {
+        fontSize: 20,
+        fontWeight: '700',
+        marginBottom: 8,
+        textAlign: 'center',
+    },
+    processingStep: {
+        fontSize: 16,
+        textAlign: 'center',
+        marginBottom: 24,
+    },
+    processingProgress: {
+        width: '100%',
+        alignItems: 'center',
+    },
+    progressBar: {
+        width: 200,
+        height: 4,
+        backgroundColor: '#e5e7eb',
+        borderRadius: 2,
+        overflow: 'hidden',
+    },
+    progressFill: {
+        height: '100%',
+        backgroundColor: '#667eea',
+        borderRadius: 2,
     },
 });
 
