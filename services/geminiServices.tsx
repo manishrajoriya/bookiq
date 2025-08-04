@@ -78,6 +78,58 @@ export const processImage = async (imageUri: string): Promise<string> => {
   }
 };
 
+export const getAnswerFromImage = async (
+  imageUri: string,
+  feature: string = 'ai-scan'
+): Promise<{text: string, answer: string}> => {
+  try {
+    console.log("GEMINI_SERVICE: Starting direct image processing with Gemini for URI:", imageUri);
+    
+    const base64Image = await FileSystem.readAsStringAsync(imageUri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+
+    const supabaseEdgeUrl = `${SUPABASE_BASE_URL}/get-image-answer`;
+    console.log('GEMINI_SERVICE: Sending request to Supabase Edge Function for direct Gemini processing...');
+    
+    const response = await axios.post(
+      supabaseEdgeUrl,
+      { 
+        imageBase64: base64Image,
+        feature
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SUPABASE_BEARER_TOKEN}`,
+        },
+      }
+    );
+
+    console.log("GEMINI_SERVICE: Received response from Gemini image processing");
+
+    if (!response.data?.text || !response.data?.answer) {
+      console.warn("GEMINI_SERVICE: Invalid response from Gemini image processing");
+      throw new Error("Failed to process image with Gemini");
+    }
+
+    return {
+      text: response.data.text,
+      answer: response.data.answer
+    };
+  } catch (error) {
+    console.error("GEMINI_SERVICE: Error processing image with Gemini:", error);
+    if (axios.isAxiosError(error)) {
+      console.error("GEMINI_SERVICE: Axios error details:", {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data
+      });
+    }
+    throw new Error("Failed to process image with Gemini. Please try again with a clearer image.");
+  }
+};
+
 export const getAnswerFromGemini = async (
   extractedText: string,
   feature: string

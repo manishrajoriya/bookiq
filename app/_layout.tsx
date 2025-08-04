@@ -56,7 +56,8 @@ export default function RootLayout() {
         <GlobalThemeProvider>
           <PurchasesProvider>
             <Stack screenOptions={{ animation: 'none', animationDuration: 500, animationTypeForReplace: 'push' }}>
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="index" options={{ headerShown: false }} />
+              <Stack.Screen name="profile" options={{ headerShown: false }} />
               <Stack.Screen name="notes" options={{ headerShown: false }} />
               <Stack.Screen name="note/[id]" options={{ headerShown: false }} />
               <Stack.Screen name="study-notes" options={{ headerShown: false }} />

@@ -12,16 +12,16 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
-import AIAnswerModal from '../../components/AIAnswerModal';
-import ImageScanModal from '../../components/ImageScanModal';
-import { useThemeContext } from '../../providers/ThemeProvider';
-import { getAnswerFromGemini, processImage } from '../../services/geminiServices';
+import AIAnswerModal from '../components/AIAnswerModal';
+import ImageScanModal from '../components/ImageScanModal';
+import { useThemeContext } from '../providers/ThemeProvider';
+import { getAnswerFromGemini, processImage } from '../services/geminiServices';
 import {
     addHistory,
     addNote,
     updateHistoryAnswer,
-} from "../../services/historyStorage";
-import subscriptionService from "../../services/subscriptionService";
+} from "../services/historyStorage";
+import subscriptionService from "../services/subscriptionService";
 
 const { width, height } = Dimensions.get('window');
 
@@ -53,11 +53,11 @@ const Explore = () => {
 
     const allTools = [
       { name: 'AI Scan', icon: 'scan-outline', color: '#667eea', bgColor: '#f0f2ff', feature: 'ai-scan' },
-        { name: 'My Notes', icon: 'journal-outline', color: '#feca57', bgColor: '#fffef0', feature: 'notes' },
-        { name: 'Scan Notes', icon: 'document-text-outline', color: '#4facfe', bgColor: '#f0faff', feature: 'study-notes' },
-       // { name: 'Calculator', icon: 'calculator-outline', color: '#764ba2', bgColor: '#f5f0ff', feature: 'calculator' },
-        { name: 'Quiz Maker', icon: 'help-circle-outline', color: '#f093fb', bgColor: '#fef0ff', feature: 'quiz-maker' },
-        { name: 'Flash Cards', icon: 'albums-outline', color: '#43e97b', bgColor: '#f0fff4', feature: 'flash-cards' },
+      // { name: 'Calculator', icon: 'calculator-outline', color: '#764ba2', bgColor: '#f5f0ff', feature: 'calculator' },
+      { name: 'Quiz Maker', icon: 'help-circle-outline', color: '#f093fb', bgColor: '#fef0ff', feature: 'quiz-maker' },
+      { name: 'Flash Cards', icon: 'albums-outline', color: '#43e97b', bgColor: '#f0fff4', feature: 'flash-cards' },
+      { name: 'My Notes', icon: 'journal-outline', color: '#feca57', bgColor: '#fffef0', feature: 'notes' },
+      { name: 'Scan Notes', icon: 'document-text-outline', color: '#4facfe', bgColor: '#f0faff', feature: 'study-notes' },
         { name: 'Mind Maps', icon: 'git-network-outline', color: '#96ceb4', bgColor: '#f9fff9', feature: 'mind-maps' },
         { name: 'Homework', icon: 'book-outline', color: '#fa709a', bgColor: '#fff0f5', feature: 'homework' },
         { name: 'Magic Eraser', icon: 'sparkles-outline', color: '#ff6b6b', bgColor: '#fff0f0', feature: 'magic-eraser' },
@@ -294,7 +294,9 @@ const Explore = () => {
                     >
                         <Ionicons name="time-outline" size={20} color={COLORS.accentColor} />
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.profileButton}>
+                    <TouchableOpacity style={styles.profileButton}
+                    onPress={() => router.push('/profile' as any)}
+                    >
                         <View style={[styles.profileAvatar, { backgroundColor: COLORS.cardColor, borderColor: COLORS.borderColor }]}>
                             <Ionicons name="person-outline" size={20} color={COLORS.iconColor} />
                         </View>

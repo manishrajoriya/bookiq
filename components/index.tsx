@@ -11,12 +11,12 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import AIAnswerModal from '../../components/AIAnswerModal';
-import ImageScanModal from '../../components/ImageScanModal';
-import { useThemeContext } from '../../providers/ThemeProvider';
-import { getAnswerFromGemini, processImage } from '../../services/geminiServices';
-import { addHistory } from '../../services/historyStorage';
-import subscriptionService from '../../services/subscriptionService';
+import { useThemeContext } from '../providers/ThemeProvider';
+import { getAnswerFromGemini, processImage } from '../services/geminiServices';
+import { addHistory } from '../services/historyStorage';
+import subscriptionService from '../services/subscriptionService';
+import AIAnswerModal from './AIAnswerModal';
+import ImageScanModal from './ImageScanModal';
 
 // Dynamic color scheme based on theme
 const getColors = (isDark: boolean) => ({
@@ -117,7 +117,7 @@ const Index = () => {
 
   const handleViewHistory = () => {
     setAiAnswerVisible(false);
-    router.push('/explore');
+    router.push('/');
   };
 
   return (

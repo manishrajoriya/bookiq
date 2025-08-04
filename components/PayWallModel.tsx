@@ -1252,16 +1252,16 @@ Best regards,
 
           {/* Credit Verification Section */}
           <View style={styles.verificationSection}>
-            <Text style={styles.verificationHeader}>Check Your Credits</Text>
-            <Text style={styles.verificationSubtext}>Verify your purchases and restore any missing credits</Text>
-            <TouchableOpacity
+            {/* <Text style={styles.verificationHeader}>Check Your Credits</Text>
+            <Text style={styles.verificationSubtext}>Verify your purchases and restore any missing credits</Text> */}
+            {/* <TouchableOpacity
               style={styles.verificationBtn}
               onPress={checkPurchaseStatus}
               activeOpacity={0.8}
             >
               <Ionicons name="refresh-circle-outline" size={20} color="#fff" />
               <Text style={styles.verificationBtnText}>Verify Credits & Check Status</Text>
-            </TouchableOpacity>
+            </TouchableOpacity> */}
             
             {/* Restoration Statistics */}
             <View style={styles.statsContainer}>

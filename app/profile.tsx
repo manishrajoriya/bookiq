@@ -3,25 +3,25 @@ import type { Session } from '@supabase/supabase-js';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
-import AuthModal from '../../components/AuthModal';
-import { useThemeColor } from '../../hooks/useThemeColor';
-import { useThemeContext } from '../../providers/ThemeProvider';
+import AuthModal from '../components/AuthModal';
+import { useThemeColor } from '../hooks/useThemeColor';
+import { useThemeContext } from '../providers/ThemeProvider';
 import {
-    getAllFlashCardSets,
-    getAllHistory,
-    getAllNotes,
-    getAllQuizzes,
-    getAllScanNotes
-} from '../../services/historyStorage';
-import subscriptionService from '../../services/subscriptionService';
-import { supabase } from '../../utils/supabase';
+  getAllFlashCardSets,
+  getAllHistory,
+  getAllNotes,
+  getAllQuizzes,
+  getAllScanNotes
+} from '../services/historyStorage';
+import subscriptionService from '../services/subscriptionService';
+import { supabase } from '../utils/supabase';
 
 interface UserStats {
   problemsSolved: number;
