@@ -10,10 +10,30 @@
     },
     "preview": {
       "distribution": "internal",
+      "env": {
+         "EXPO_PUBLIC_GOOGLE_CLOUD_VISION_API_KEY":"AIzaSyBBgd5Gn3QL9ue-hCb7IFXiQ3tNiDK_vFg",
+        "EXPO_PUBLIC_GEMINI_API_KEY":"AIzaSyDp30jDy-P1UPHZk4xrWXko0po5gcH0OLM",
+        "EXPO_PUBLIC_REVENUCAT_API_KEY":"goog_MbtvzZWOvbOowwuAEceuQFLMVaF",
+        "EXPO_PUBLIC_SUPABASE_URL":"https://mnjhkeygyczkziowlrab.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_KEY":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1uamhrZXlneWN6a3ppb3dscmFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE4ODQ4NzcsImV4cCI6MjA2NzQ2MDg3N30.9unaHI1ZXmSLMDf1szwmsR6oGXpDrn7-MTH-YXH5hng",
+        "EXPO_PUBLIC_SUPABASE_URL_FUNCTIONS":"https://mnjhkeygyczkziowlrab.supabase.co/functions/v1",
+        "EXPO_PUBLIC_SUPABASE_BEARER_TOKEN":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1uamhrZXlneWN6a3ppb3dscmFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE4ODQ4NzcsImV4cCI6MjA2NzQ2MDg3N30.9unaHI1ZXmSLMDf1szwmsR6oGXpDrn7-MTH-YXH5hng"
+  
+      }
      
     },
     "production": {
       "autoIncrement": true,
+       "env": {
+         "EXPO_PUBLIC_GOOGLE_CLOUD_VISION_API_KEY":"AIzaSyBBgd5Gn3QL9ue-hCb7IFXiQ3tNiDK_vFg",
+        "EXPO_PUBLIC_GEMINI_API_KEY":"AIzaSyDp30jDy-P1UPHZk4xrWXko0po5gcH0OLM",
+        "EXPO_PUBLIC_REVENUCAT_API_KEY":"goog_MbtvzZWOvbOowwuAEceuQFLMVaF",
+        "EXPO_PUBLIC_SUPABASE_URL":"https://mnjhkeygyczkziowlrab.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_KEY":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1uamhrZXlneWN6a3ppb3dscmFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE4ODQ4NzcsImV4cCI6MjA2NzQ2MDg3N30.9unaHI1ZXmSLMDf1szwmsR6oGXpDrn7-MTH-YXH5hng",
+        "EXPO_PUBLIC_SUPABASE_URL_FUNCTIONS":"https://mnjhkeygyczkziowlrab.supabase.co/functions/v1",
+        "EXPO_PUBLIC_SUPABASE_BEARER_TOKEN":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1uamhrZXlneWN6a3ppb3dscmFiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE4ODQ4NzcsImV4cCI6MjA2NzQ2MDg3N30.9unaHI1ZXmSLMDf1szwmsR6oGXpDrn7-MTH-YXH5hng"
+  
+      }
       
     }
   },
